@@ -1,0 +1,62 @@
+---
+title: IvorySQL v5 Compatibility Webinar
+date: '2025-12-25'
+location: Online
+eventType: Webinar
+type: Online
+image: /images/events/event-202517.jpg
+description: >-
+  Preview of IvorySQL v5 compatibility features and architecture changes.
+slug: event-202517
+---
+
+#
+Webinar Recap | IvorySQL v5 Compatibility Feature Guide
+
+📅 Date: 2025-12-25
+🌍 Online Webinar
+
+On December 25, the IvorySQL community organized an online webinar themed: "IvorySQL v5 Compatibility Feature Guide." Below is the overall recap of this session.
+
+## Speaker Profile
+
+Zheng Tao, Software Development Engineer at Highgo, IvorySQL Contributor.
+
+## Sharing Content Introduction
+
+This webinar focused on IvorySQL's latest version v5, highlighting the 21 new Oracle compatibility features. It also provided a systematic explanation of upgrades in ecosystem component integration, cloud-native support, full-platform installation packages, and online experience, enabling users to use these new compatibility features more smoothly.
+
+## Outline Recap
+
+![Outline Recap](/images/events/event-202517-1.jpg)
+
+## Q & A
+
+Q1: Will switching to compatibility mode online affect data? For example, Oracle only has NULL while PG has empty strings.
+A: Switching IvorySQL to Oracle compatibility mode primarily affects syntax, functions, and data type behavior, but it does not modify existing data: records that originally distinguished between '' and NULL in the database will remain as they are.
+
+Q2: Is v5.1 live yet? To what extent has the new version achieved compatibility for specific Oracle syntax (like PL/SQL packages or certain data types)? Are there known limitations or alternatives?
+A: IvorySQL 5.1 is now live. IvorySQL's core procedural language is PL/iSQL, which introduces Oracle-style Packages, stored procedures, functions, and nested sub-functions, supporting common data types. Current known limitations: Packages only support partial features and are still under continuous development. Alternative: Use custom functions for implementation.
+
+Q3: Do nested sub-functions support multiple levels of nesting? Is there a limit on nesting levels?
+A: Yes, multiple levels of nesting are supported. To prevent infinite recursion and resource exhaustion, the nesting limit is set to 200 levels.
+
+Q4: Are there migration tools for Oracle stored procedure migration? How can the correctness after migration be verified?
+
+A: Open-source version: Only provides table and data migration, usually not supporting stored procedure migration. Highgo's commercial version supports stored procedure migration, typically verified through five levels:
+
+- Syntax creation success: Confirm no syntax errors;
+
+- Data-less logic verification: Execute logic tests in a test environment;
+
+- Data-driven business verification: Use simulated/desensitized production data to verify business correctness;
+
+- Application verification: Verify functional completeness through application calls;
+
+- Regression test verification: Verification through user regression testing systems.
+
+PPT Download: Follow the official WeChat account [IvorySQL开源数据库社区] and reply with the keyword 20251225 to download the PPT.
+
+Webinar Playback: https://www.bilibili.com/video/BV1p2BaBREKf/
+
+[Back to Event List](/community/events)

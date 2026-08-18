@@ -1,0 +1,1077 @@
+{
+  "Navbar": {
+    "openMenu": "打开主菜单",
+    "docs": "文档",
+    "blog": "博客",
+    "products": {
+      "trigger": "产品",
+      "coreCapabilities": "核心能力",
+      "applicationScenarios": "应用场景",
+      "oracleCompat": {
+        "title": "Oracle 兼容性",
+        "description": "深度兼容 Oracle 语法与特性，实现无缝迁移"
+      },
+      "ecosystem": {
+        "title": "生态系统",
+        "description": "工具生态、国产 CPU/操作系统认证与兼容性证书"
+      },
+      "cloudNative": {
+        "title": "云原生",
+        "description": "通过 Docker Compose、Helm 和 Operator 实现容器化部署"
+      },
+      "scenarios": {
+        "enterpriseDb": {
+          "title": "企业级数据库",
+          "description": "适用于 ERP、事务处理和金融系统"
+        },
+        "lbs": {
+          "title": "LBS 应用",
+          "description": "基于 PostGIS 的地理空间查询"
+        },
+        "unifiedData": {
+          "title": "统一数据平台",
+          "description": "OLTP 与实时分析一体化"
+        },
+        "aiEmpowered": {
+          "title": "AI 赋能数据库",
+          "description": "支持 NL2SQL 与 AI Agent 推理"
+        },
+        "dbMigration": {
+          "title": "数据库迁移",
+          "description": "从 Oracle 无缝迁移到 IvorySQL"
+        }
+      }
+    },
+    "community": {
+      "trigger": "社区",
+      "groups": {
+        "community": "社区",
+        "getInvolved": "参与贡献"
+      },
+      "events": {
+        "title": "社区活动",
+        "description": "会议、聚会与线上分享"
+      },
+      "expertCommittee": {
+        "title": "专家顾问委员会",
+        "description": "为 IvorySQL 发展方向提供指导的数据库专家"
+      },
+      "news": {
+        "title": "社区动态",
+        "description": "产品发布与社区动态"
+      },
+      "partners": {
+        "title": "合作伙伴",
+        "description": "生态合作伙伴展示"
+      },
+      "customerStories": {
+        "title": "客户故事",
+        "description": "用户案例与实践经验"
+      },
+      "vulnerabilityManagement": {
+        "title": "漏洞管理",
+        "description": "报告与跟踪安全漏洞"
+      },
+      "contributingGuide": {
+        "title": "贡献指南",
+        "description": "了解如何为 IvorySQL 贡献代码"
+      },
+      "contributors": {
+        "title": "贡献者",
+        "description": "贡献者的故事"
+      },
+      "roadmap": {
+        "title": "路线图",
+        "description": "产品路线图与未来规划"
+      },
+      "issueTracker": {
+        "title": "问题跟踪",
+        "description": "提交 Bug 反馈与功能建议"
+      }
+    },
+    "resources": {
+      "trigger": "资源",
+      "groups": {
+        "gettingStarted": "快速开始",
+        "repositories": "代码仓库"
+      },
+      "downloads": {
+        "title": "下载",
+        "description": "获取最新版本与发布说明"
+      },
+      "releases": {
+        "title": "发布",
+        "description": "发布历史与版本变更记录"
+      },
+      "installation": {
+        "title": "安装",
+        "description": "快速安装指南"
+      },
+      "onlineTrial": {
+        "title": "在线试用",
+        "description": "无需安装，直接在浏览器中体验"
+      },
+      "sandboxes": {
+        "title": "沙盒环境",
+        "description": "在 PGNexus.ai 的沙盒环境中体验 IvorySQL"
+      },
+      "github": {
+        "title": "GitHub",
+        "description": "主代码仓库"
+      },
+      "atomgit": {
+        "title": "AtomGit",
+        "description": "开放原子基金会平台"
+      },
+      "gitee": {
+        "title": "Gitee",
+        "description": "面向中国开发者的镜像仓库"
+      }
+    }
+  },
+  "Footer": {
+    "ctaTitle": "现在就开始使用 IvorySQL",
+    "ctaDescription": "开源、兼容 Oracle 的 PostgreSQL —— 为可靠性与性能而生。",
+    "getStarted": "开始使用",
+    "onlineTrial": "在线试用",
+    "sandboxes": "沙盒环境",
+    "brandDescription": "开源、兼容 Oracle 的 PostgreSQL，基于 PostgreSQL 打造企业级特性。",
+    "columns": {
+      "docs": "文档",
+      "community": "社区",
+      "developers": "开发者"
+    },
+    "docsLinks": {
+      "documentation": "文档",
+      "releases": "发布",
+      "onlineTrial": "在线试用"
+    },
+    "communityLinks": {
+      "mailingLists": "邮件列表",
+      "discord": "Discord",
+      "twitter": "Twitter"
+    },
+    "developerLinks": {
+      "github": "GitHub",
+      "atomgit": "AtomGit",
+      "gitee": "Gitee",
+      "contributors": "贡献者",
+      "roadmap": "路线图"
+    },
+    "copyright": "版权所有 © {year} IvorySQL"
+  },
+  "Common": {
+    "getStarted": "开始使用",
+    "onlineTrial": "在线试用",
+    "sandboxes": "沙盒环境",
+    "tryItNow": "立即体验",
+    "readDocs": "查看文档",
+    "visit": "访问"
+  },
+  "Hero": {
+    "tagline": "开源、兼容 Oracle 的 PostgreSQL",
+    "description": "一款富有创造力且强大的数据库，基于 PostgreSQL 打造 Oracle 兼容能力，兼顾可靠性与性能。"
+  },
+  "Quickstart": {
+    "heading": "几分钟即可开始",
+    "description": "选择最适合你的方式开始使用 IvorySQL —— 从本地安装到浏览器即时体验。",
+    "quickInstall": {
+      "title": "快速安装",
+      "description": "使用你的包管理器，几分钟内在本地安装 IvorySQL"
+    },
+    "containerDeploy": {
+      "title": "容器化部署",
+      "description": "使用官方镜像在 Docker 或 Kubernetes 中运行 IvorySQL"
+    },
+    "onlineTrial": {
+      "description": "无需任何配置，直接在浏览器中体验 IvorySQL"
+    },
+    "sandboxes": {
+      "description": "在 PGNexus.ai 的沙盒环境中体验 IvorySQL"
+    }
+  },
+  "Features": {
+    "heading": "为什么选择 IvorySQL",
+    "description": "IvorySQL 融合了 PostgreSQL 的强大能力、Oracle 兼容性、开源自由与企业级可靠性。",
+    "openSource": {
+      "title": "开源",
+      "description": "无厂商锁定。采用 Apache 2.0 协议，可自由使用、修改与分发。"
+    },
+    "postgresql": {
+      "title": "基于 PostgreSQL 打造",
+      "description": "源自 PostgreSQL，拥有完整 SQL 支持、坚实可靠性与庞大生态。"
+    },
+    "oracleCompat": {
+      "title": "Oracle 兼容",
+      "description": "内置兼容能力，助你将 Oracle 数据库无缝迁移到 IvorySQL。"
+    },
+    "customization": {
+      "title": "自由定制",
+      "description": "下载源码即可按需定制，满足任何需求的完整源码访问权限。"
+    },
+    "openatom": {
+      "title": "开放原子基金会支持",
+      "description": "由开放原子基金会提供支持，该基金会致力于开源软件的发展与创新。"
+    },
+    "communityDriven": {
+      "title": "社区驱动",
+      "description": "一个富有创造力、协作紧密的社区，共同构建更多可能性。"
+    }
+  },
+  "OpenSourceBanner": {
+    "title": "100% 免费开源",
+    "license": "Apache 2.0 协议",
+    "description": "IvorySQL 遵循宽松的 Apache 2.0 协议发布 —— 无论个人、初创企业还是大型企业，均可自由使用。",
+    "descriptionHighlight": "无需付费，无付费墙，无功能限制。",
+    "joinCommunity": "加入社区",
+    "perks": {
+      "freeForever": {
+        "label": "永久免费",
+        "detail": "无许可费用，无隐藏成本"
+      },
+      "apache2": {
+        "label": "Apache 2.0 协议",
+        "detail": "宽松且对商业友好"
+      },
+      "commercialUse": {
+        "label": "商业使用",
+        "detail": "可自由使用、修改与再分发"
+      }
+    }
+  },
+  "UseCases": {
+    "heading": "应用场景",
+    "description": "IvorySQL 专为多样化的企业与现代数据负载而设计，从关键业务系统到 AI 驱动的智能应用皆可胜任。",
+    "enterpriseDb": {
+      "title": "企业级数据库",
+      "description": "适用于 ERP 系统、交易平台、金融系统等需要高可用性和复杂业务逻辑的场景。"
+    },
+    "lbs": {
+      "title": "LBS 应用",
+      "description": "通过 PostGIS 支持地理空间查询(如 O2O 服务、游戏地图等)，适配基于位置的应用。"
+    },
+    "unifiedData": {
+      "title": "统一数据平台",
+      "description": "支持 OLTP 与实时分析的混合负载，满足企业对实时数据服务与敏捷分析的双重需求。"
+    },
+    "aiEmpowered": {
+      "title": "AI 赋能数据库",
+      "description": "支持自然语言查询(NL2SQL)与 AI Agent 协同推理，构建灵活可扩展的智能数据库平台。"
+    },
+    "dbMigration": {
+      "title": "数据库迁移",
+      "description": "直接从 Oracle 数据库迁移到 IvorySQL，借助内置的 Oracle 兼容能力最大程度减少改造成本。"
+    }
+  },
+  "Community": {
+    "heading": "从第一天起就开源",
+    "description": "IvorySQL 由一个致力于让 PostgreSQL 更易用、更兼容 Oracle 的全球开发者社区共同构建。",
+    "stats": {
+      "yearsOfDevelopment": "年研发历程",
+      "githubStars": "GitHub Star 数",
+      "openSourceRepos": "开源仓库数"
+    },
+    "links": {
+      "github": {
+        "name": "GitHub",
+        "description": "为我们点亮 GitHub Star，一起参与项目贡献"
+      },
+      "atomgit": {
+        "name": "AtomGit",
+        "description": "开放原子基金会提供的 IvorySQL 平台"
+      },
+      "gitee": {
+        "name": "Gitee",
+        "description": "托管在 Gitee 上的国内镜像"
+      },
+      "discord": {
+        "name": "Discord",
+        "description": "加入我们的社区，参与讨论并获取支持"
+      },
+      "mailingLists": {
+        "name": "邮件列表",
+        "description": "及时了解开发进展与用户讨论"
+      },
+      "twitter": {
+        "name": "Twitter",
+        "description": "关注我们获取最新资讯与公告"
+      }
+    },
+    "contributeOnGithub": "在 GitHub 上贡献",
+    "contributionGuidelines": "贡献指南"
+  },
+  "BusinessValue": {
+    "heading": "为真实业务挑战而生",
+    "description": "从初创公司到大型企业，IvorySQL 为跨行业的关键业务负载提供支持 —— 解决数据库团队每天面临的实际痛点。",
+    "industriesLabel": "获得各行各业、各发展阶段企业的信赖",
+    "industries": {
+      "finance": "金融",
+      "telecom": "电信",
+      "government": "政府",
+      "energy": "能源",
+      "manufacturing": "制造业",
+      "internet": "互联网"
+    },
+    "scaleTags": {
+      "startupMvp": "初创 MVP",
+      "smbProduction": "中小企业生产环境",
+      "enterpriseCore": "企业核心系统",
+      "missionCritical": "关键业务",
+      "multiRegion": "多地域部署",
+      "highConcurrency": "高并发"
+    },
+    "challengesLabel": "我们能解决的问题",
+    "challengeBadge": "挑战",
+    "solutionBadge": "解决方案",
+    "challenges": {
+      "licensing": {
+        "pain": "商业数据库授权费用持续攀升",
+        "solution": "采用 Apache 2.0 协议，无按核收费，无企业版分级，无隐藏成本。任意规模的生产负载均可完全免费运行。"
+      },
+      "migration": {
+        "pain": "Oracle 迁移风险高、成本高、周期长",
+        "solution": "原生支持 PL/SQL、包、游标与 Oracle 风格数据类型，让你以最小的改造成本平迁，大幅缩短迁移时间与成本。"
+      },
+      "htap": {
+        "pain": "事务处理与分析需要维护两套独立数据库",
+        "solution": "统一的 HTAP 引擎在同一处理 OLTP 与实时分析 —— 无需数据管道，没有同步延迟，不必重复建设基础设施。"
+      },
+      "compliance": {
+        "pain": "受监管行业需要国产操作系统与 CPU 合规认证",
+        "solution": "已通过麒麟、统信 UOS、openEuler 以及 x86_64、ARM64、MIPS、龙芯架构认证，开箱即用，满足信创与受监管行业的部署要求。"
+      }
+    },
+    "ctaQuestion": "有具体的使用场景想了解吗?",
+    "readCustomerStories": "查看客户故事 →"
+  },
+  "Capabilities": {
+    "heading": "完整的企业级数据库",
+    "description": "PostgreSQL 的可靠性、Oracle 兼容性、丰富的生态系统与云原生部署 —— 企业所需的一切，尽在一个数据库中。",
+    "viewDocumentation": "查看文档",
+    "pillars": {
+      "pg-kernel": {
+        "label": "PG 内核",
+        "tagline": "与每个 PostgreSQL 版本同步演进",
+        "description": "IvorySQL 紧跟 PostgreSQL 内核的发展步伐，与每个上游版本同步发布新版本。当前版本基于 PostgreSQL 18 内核构建，引入了异步 I/O 与 Skip Scan，带来显著的性能提升。",
+        "points": [
+          "完整的 SQL 兼容性与 ACID 事务",
+          "原生流复制与时间点恢复(PITR)",
+          "异步 I/O 提升存储吞吐量",
+          "Skip Scan 加速多列索引查询"
+        ]
+      },
+      "oracle": {
+        "label": "Oracle 兼容",
+        "tagline": "无需改写代码即可运行 Oracle 负载",
+        "description": "原生支持 PL/SQL 过程化语法，包括代码块、循环、游标、包与异常处理 —— 以最小改动完成 Oracle 迁移。",
+        "points": [
+          "原生 PL/SQL 过程化语法",
+          "Oracle 风格的异常处理",
+          "包规范与包体分离",
+          "DUAL 表与内置函数"
+        ]
+      },
+      "ecosystem": {
+        "label": "丰富生态",
+        "tagline": "工具、扩展与国产操作系统/CPU 认证",
+        "description": "已通过主流国产平台与 CPU 架构认证，并拥有包括 PostGIS、PGroonga、pgAudit 在内的丰富扩展库。",
+        "points": [
+          "已通过麒麟、Anolis、统信 UOS、openEuler 认证",
+          "支持 x86_64、ARM64、MIPS、龙芯架构",
+          "支持 pgBouncer、pg_probackup、Repmgr 等工具",
+          "支持 PostGIS、PGroonga、pgAudit 等扩展"
+        ]
+      },
+      "cloud-native": {
+        "label": "云原生",
+        "tagline": "Docker、Kubernetes 与 IvorySQL Cloud",
+        "description": "支持 Docker Compose、Podman、Swarm 与 Kubernetes Operator，提供完整生命周期管理 —— 随处部署。",
+        "points": [
+          "Docker Compose 与 Podman",
+          "Swarm 与 Kubernetes Operator",
+          "IvorySQL Cloud 生命周期管理",
+          "生态工具集成"
+        ]
+      }
+    }
+  },
+  "BlogPage": {
+    "metaTitle": "博客",
+    "metaDescription": "获取 IvorySQL 的最新动态、技术深度解析与社区更新。",
+    "heading": "IvorySQL 博客",
+    "subheading": "来自 IvorySQL 团队的技术深度解析、产品更新与社区故事。",
+    "readArticle": "阅读文章"
+  },
+  "NewsPage": {
+    "metaTitle": "新闻与动态",
+    "metaDescription": "获取 IvorySQL 的最新新闻、产品发布与社区动态。",
+    "heading": "新闻与动态",
+    "subheading": "获取 IvorySQL 的最新新闻、产品发布与社区动态。"
+  },
+  "EventsPage": {
+    "metaTitle": "活动",
+    "metaDescription": "来自 IvorySQL 团队的会议、聚会、线上研讨会与社区活动。",
+    "heading": "社区活动",
+    "subheading": "来自 IvorySQL 团队的会议、聚会、线上研讨会与社区活动。",
+    "currentlyHappening": "正在进行",
+    "nextUpcomingEvent": "近期活动",
+    "viewDetails": "查看详情"
+  },
+  "EventsUI": {
+    "backToEvents": "全部活动",
+    "previousEvent": "上一个活动",
+    "nextEvent": "下一个活动",
+    "relatedEvents": "相关活动",
+    "joinCommunity": {
+      "title": "加入 IvorySQL 社区",
+      "description": "参与我们的开源社区，贡献代码、参加活动或分享你的经验。"
+    },
+    "searchPlaceholder": "搜索活动...",
+    "eventType": "活动类型",
+    "all": "全部",
+    "showingCount": "显示 {total} 个活动中的 {shown} 个",
+    "noResults": "没有匹配的活动。",
+    "statusEnded": "已结束",
+    "statusUpcoming": "即将开始",
+    "statusOngoing": "进行中"
+  },
+  "NewsUI": {
+    "all": "全部",
+    "noResults": "该分类下暂无新闻。",
+    "readMore": "阅读更多",
+    "articleCount": "{count} 篇文章",
+    "backToNews": "返回新闻"
+  },
+  "BlogUI": {
+    "all": "全部",
+    "searchPlaceholder": "搜索博客...",
+    "noResultsSearch": "没有匹配的文章。",
+    "noResultsCategory": "该分类下暂无文章。"
+  },
+  "BlogPostUI": {
+    "backToBlog": "返回博客",
+    "shareThisArticle": "分享这篇文章",
+    "previousPost": "上一篇",
+    "nextPost": "下一篇",
+    "tags": "标签",
+    "relatedPosts": "相关文章",
+    "tryIvorySQL": "体验 IvorySQL",
+    "ctaDescription": "立即开始使用 IvorySQL。查看文档或体验在线演示。",
+    "readDocs": "查看文档"
+  },
+  "RoadmapPage": {
+    "metaTitle": "路线图",
+    "metaDescription": "跟踪 IvorySQL 的开发进度、发布计划和即将推出的功能。",
+    "backToHome": "返回首页",
+    "badge": "开发者",
+    "heading": "欢迎来到 IvorySQL 开发者版块",
+    "intro": "IvorySQL 是一个非商业性的全志愿者开源软件项目，因此开发过程中并没有正式的功能需求列表。我们鼓励开发者探索自己感兴趣的主题，同时也确保所有提交到 IvorySQL 的新功能都经过我们社区贡献者和提交者的严格审核。",
+    "minorReleasesHeading": "小版本发布",
+    "minorReleasesDescription": "IvorySQL 项目旨在按照预定计划，每个季度发布一个小版本。如果因重要的错误修复或安全问题需要发布额外版本，则可能会在这些日期之间增加发布。因此，该列表应被视为最低发布频率。IvorySQL 紧跟 PostgreSQL 发布计划，每个季度都会发布一个最新内核的小版本。",
+    "minorReleasesScheduleIntro": "今年的版本发布情况如下：",
+    "releases": [
+      {
+        "quarter": "第一季度",
+        "version": "v5.3",
+        "kernel": "PG 内核 18.3"
+      },
+      {
+        "quarter": "第二季度",
+        "version": "v5.4",
+        "kernel": "PG 内核 18.4"
+      },
+      {
+        "quarter": "第三季度",
+        "version": "v5.5",
+        "kernel": "PG 内核 18.5"
+      },
+      {
+        "quarter": "第四季度",
+        "version": "v5.6",
+        "kernel": "PG 内核 18.6"
+      }
+    ],
+    "releaseLabel": "发布 {version}",
+    "nextMajorHeading": "下一次主版本发布",
+    "nextMajorDescription": "IvorySQL 的下一个主版本计划为 v6.0，预计于 2026 年第四季度发布。IvorySQL v6.0 的开发计划可以前往 GitHub 的 Project 页面查看。",
+    "v6Schedule": "预计于 2026 年第四季度发布",
+    "githubProjectPage": "GitHub Project 页面",
+    "previousFeaturesHeading": "以往版本已实现的兼容特性",
+    "previousFeaturesDescription": "以往版本已经实现的 Oracle 兼容特性，可以查看 IvorySQL 文档中心的 Oracle 兼容功能列表。",
+    "oracleCompatUrl": "https://docs.ivorysql.org/cn/ivorysql-doc/master/oracle_compatibility/compat_case_conversion",
+    "oracleCompatLabel": "Oracle 兼容功能列表"
+  },
+  "StoriesPage": {
+    "metaTitle": "客户案例",
+    "metaDescription": "IvorySQL 在公共安全、金融等行业的真实客户案例与实践经验分享。",
+    "heading": "客户案例",
+    "subheading": "IvorySQL 在公共安全、金融等行业的真实客户案例与实践经验分享。"
+  },
+  "StoriesUI": {
+    "all": "全部",
+    "noResults": "该行业下暂无案例。",
+    "readMore": "查看完整案例",
+    "caseCount": "{count} 个案例",
+    "backToStories": "返回客户案例"
+  },
+  "EcosystemPage": {
+    "metaTitle": "生态与兼容性",
+    "metaDescription": "IvorySQL 生态系统：55+ 款工具覆盖连接管理、高可用、驱动程序、监控运维与数据集成，并通过国产 CPU/操作系统兼容性认证。",
+    "ogTitle": "IvorySQL 生态与兼容性",
+    "ogDescription": "覆盖技术栈每一层的 55+ 款工具，并已通过主流国产 CPU（鲲鹏、龙芯、飞腾等）和操作系统（麒麟、统信 UOS、openEuler 等）的兼容性认证。",
+    "heading": "生态与工具",
+    "subheading": "社区提供了丰富的工具生态，涵盖客户端工具、高可用工具、云原生工具、监控运维工具、备份恢复工具以及地理空间工具。",
+    "domesticCompatTitle": "国产化兼容与认证",
+    "domesticCompatDescription": "已通过主流国产 CPU 与操作系统的兼容性认证，可用于安全可控的部署环境。",
+    "browseDocsLink": "浏览完整的生态系统文档",
+    "toolMeta": {
+      "pgpool-II": {
+        "desc": "PostgreSQL 中间件代理：提供连接池、负载均衡与自动故障切换。"
+      },
+      "pgBouncer": {
+        "desc": "超轻量级 PostgreSQL 连接池，最大限度降低连接开销。"
+      },
+      "odyssey": {
+        "desc": "Yandex 出品的高级多线程 PostgreSQL 连接池，专为高并发场景设计。"
+      },
+      "HAProxy": {
+        "desc": "高性能 TCP/HTTP 负载均衡器，广泛用于 PostgreSQL 读写分离。"
+      },
+      "ShardingSphere": {
+        "desc": "Apache 分布式数据库生态，为 PostgreSQL 提供分片、扩展与加密能力。"
+      },
+      "Citus": {
+        "desc": "分布式 PostgreSQL 扩展，可将数据库水平扩展到多个节点。"
+      },
+      "vip-manager": {
+        "desc": "管理 PostgreSQL 高可用集群的虚拟 IP 地址，实现无缝故障切换。"
+      },
+      "MyBatis": {
+        "desc": "Java SQL 映射框架，通过灵活的 SQL 控制消除样板 JDBC 代码。"
+      },
+      "Hibernate": {
+        "desc": "功能强大的 Java ORM 框架，完整支持 PostgreSQL 与 JPQL。"
+      },
+      "libpq": {
+        "desc": "PostgreSQL 官方 C 客户端库，是大多数语言驱动的基础。"
+      },
+      "JDBC": {
+        "desc": "PostgreSQL 官方 Java 数据库连接驱动（pgjdbc）。"
+      },
+      "ODBC": {
+        "desc": "psqlODBC —— PostgreSQL 官方 ODBC 驱动，适用于 Windows 和 Linux 应用程序。"
+      },
+      "psycopg2": {
+        "desc": "最流行的 Python PostgreSQL 适配器，完整支持异步操作。"
+      },
+      "ADO_NET": {
+        "desc": "Npgsql —— 高性能 .NET PostgreSQL 数据提供程序，支持 EF Core。"
+      },
+      "lib/pq": {
+        "desc": "纯 Go 语言实现的 PostgreSQL 驱动（旧版），兼容 database/sql 标准接口。"
+      },
+      "pgx": {
+        "desc": "高性能 Go 语言 PostgreSQL 驱动，支持底层协议访问。"
+      },
+      "Ruby": {
+        "desc": "pg gem —— PostgreSQL 官方 Ruby 接口。"
+      },
+      "Rust": {
+        "desc": "rust-postgres —— Rust 原生 PostgreSQL 驱动，支持 tokio 异步。"
+      },
+      "DBeaver": {
+        "desc": "通用多数据库 GUI 管理工具，支持 ERD、SQL 编辑器与数据导出。"
+      },
+      "pgAdmin": {
+        "desc": "PostgreSQL 官方开源管理与运维 Web 应用程序。"
+      },
+      "Navicat": {
+        "desc": "专业的 PostgreSQL GUI 工具，支持可视化查询构建与数据建模。"
+      },
+      "Navicat Premium": {
+        "desc": "多连接 GUI 工具，可同时支持 PostgreSQL、MySQL、Oracle 等多种数据库。"
+      },
+      "pg_rman": {
+        "desc": "支持 PITR 的 PostgreSQL 在线备份与恢复管理工具。"
+      },
+      "WAL-G": {
+        "desc": "基于云存储（S3、GCS、Azure）的快速云原生备份工具，支持增量压缩。"
+      },
+      "pg_probackup": {
+        "desc": "支持并行处理与增量备份的 PostgreSQL 备份恢复解决方案。"
+      },
+      "pgBackRest": {
+        "desc": "可靠且功能丰富的备份方案，支持并行恢复与云存储。"
+      },
+      "Patroni": {
+        "desc": "基于 DCS（etcd/Consul/ZooKeeper）实现自动故障切换的 PostgreSQL 高可用模板。"
+      },
+      "repmgr": {
+        "desc": "PostgreSQL 复制管理器：管理流复制与主备切换。"
+      },
+      "Pacemaker Corosync": {
+        "desc": "开源集群资源管理器，为 PostgreSQL 及其他服务提供高可用能力。"
+      },
+      "StackGres": {
+        "desc": "生产级 Kubernetes 上的 PostgreSQL，具备自动化运维、监控与备份能力。"
+      },
+      "Prometheus": {
+        "desc": "开源监控告警工具包，搭配 pg_exporter 提供 PostgreSQL 指标采集。"
+      },
+      "Alertmanager": {
+        "desc": "处理 Prometheus 发出的告警，将通知路由至邮件、Slack、PagerDuty 等。"
+      },
+      "pgMonitor": {
+        "desc": "Crunchy Data 提供的预配置 PostgreSQL 监控栈，基于 Prometheus 与 Grafana。"
+      },
+      "Grafana": {
+        "desc": "可观测性与数据可视化平台，用于仪表盘展示与告警。"
+      },
+      "PoWA": {
+        "desc": "PostgreSQL 工作负载分析器 —— 提供带历史数据的查询性能洞察。"
+      },
+      "Debezium": {
+        "desc": "实时捕获数据库行级变更事件的 CDC 平台。"
+      },
+      "pglogical": {
+        "desc": "支持选择性表复制的 PostgreSQL 逻辑复制扩展。"
+      },
+      "mysql_fdw": {
+        "desc": "用于直接从 PostgreSQL 访问 MySQL 表的外部数据包装器。"
+      },
+      "oracle_fdw": {
+        "desc": "用于透明查询 Oracle 数据库的 PostgreSQL 外部数据包装器。"
+      },
+      "Ora2Pg": {
+        "desc": "免费开源工具，用于将 Oracle 数据库模式和数据迁移到 PostgreSQL。"
+      },
+      "pg_bulkload": {
+        "desc": "PostgreSQL 高速数据加载工具，绕过 WAL 以实现最大吞吐量。"
+      },
+      "ddlx": {
+        "desc": "从数据库对象中提取干净、可执行 DDL 脚本的 PostgreSQL 扩展。"
+      },
+      "Databene": {
+        "desc": "用于回归测试与性能测试的数据库测试及合成数据生成框架。"
+      },
+      "TimescaleDB": {
+        "desc": "基于 PostgreSQL 构建的时序数据库，支持自动分区与压缩。"
+      },
+      "DocumentDB": {
+        "desc": "兼容 MongoDB 协议的开源文档数据库，基于 PostgreSQL 构建。"
+      },
+      "PostgreSQL AGE": {
+        "desc": "Apache AGE —— 支持 openCypher 查询的 PostgreSQL 图数据库扩展。"
+      },
+      "FerretDB": {
+        "desc": "使用 PostgreSQL 作为存储层、兼容 MongoDB 的后端，使 Mongo 驱动可直接使用。"
+      },
+      "PostGIS": {
+        "desc": "为 PostgreSQL 添加空间与地理对象支持，GIS 领域的黄金标准。"
+      },
+      "pgRouting": {
+        "desc": "在 PostGIS 基础上扩展的地理空间路由扩展，用于路径规划与网络分析。"
+      },
+      "pgvector": {
+        "desc": "PostgreSQL 开源向量相似度搜索扩展，适用于 AI 向量嵌入与 RAG 场景。"
+      },
+      "MADlib": {
+        "desc": "Apache MADlib —— 面向可扩展分析的数据库内机器学习库。"
+      },
+      "postgres-wasm": {
+        "desc": "编译为 WebAssembly 的 PostgreSQL —— 无需安装即可在浏览器中运行完整数据库。"
+      },
+      "pg_cron": {
+        "desc": "基于 Cron 的 PostgreSQL 任务调度器，在数据库内按计划执行 SQL 命令。"
+      },
+      "pgAgent": {
+        "desc": "集成于 pgAdmin 的 PostgreSQL 任务调度代理，用于定时任务。"
+      },
+      "Docker Compose": {
+        "desc": "定义并运行多容器应用程序；提供官方 IvorySQL Docker 镜像。"
+      },
+      "Podman": {
+        "desc": "无守护进程、无需 root 权限的容器引擎，完全兼容 Docker 镜像与 compose 文件。"
+      },
+      "Docker Swarm": {
+        "desc": "原生 Docker 集群方案，用于以副本化、高可用的方式部署 IvorySQL。"
+      }
+    },
+    "categories": {
+      "connectivity": {
+        "title": "连接与连接池",
+        "desc": "连接池、负载均衡与水平分片"
+      },
+      "haBackup": {
+        "title": "高可用与备份",
+        "desc": "集群管理、自动故障切换与时间点恢复"
+      },
+      "devTools": {
+        "title": "开发工具与驱动",
+        "desc": "GUI 客户端、ORM 框架与多语言数据库驱动"
+      },
+      "monitoring": {
+        "title": "监控与运维",
+        "desc": "指标采集、仪表盘与查询性能分析"
+      },
+      "dataIntegration": {
+        "title": "数据集成与迁移",
+        "desc": "CDC、异构访问与 Oracle 到 PostgreSQL 的迁移"
+      },
+      "aiGeo": {
+        "title": "AI、地理与多模型",
+        "desc": "向量搜索、时序数据、地理空间与图扩展"
+      }
+    },
+    "platformFooters": [
+      "操作系统：Windows / CentOS / RHEL / Ubuntu / openEuler / 麒麟 OS / 统信 UOS",
+      "CPU 架构：x86 / 鲲鹏 / 龙芯 / 兆芯 / 申威 / 海光 / 飞腾 / MIPS / RISC-V"
+    ],
+    "legendLabels": {
+      "supported": "已支持",
+      "progress": "支持中",
+      "planned": "计划支持",
+      "proprietary": "商业软件"
+    }
+  },
+  "PartnersPage": {
+    "metaTitle": "合作伙伴",
+    "metaDescription": "探索 IvorySQL 合作伙伴生态 —— 技术合作伙伴、社区协作者、商业解决方案与学术项目。",
+    "ogTitle": "IvorySQL 合作伙伴",
+    "heading": "合作伙伴",
+    "subheading": "探索我们的技术合作伙伴、社区协作者和商业解决方案提供商生态。"
+  },
+  "PartnersUI": {
+    "certificatesTitle": "兼容性认证",
+    "certificatesDescription": "已验证与主流平台和操作系统的兼容性。",
+    "benefitsTitle": "合作伙伴权益",
+    "ctaTitle": "准备好携手合作了吗？",
+    "ctaDescription": "欢迎申请加入。加入全球 IvorySQL 合作伙伴网络，与社区建立深度连接。",
+    "ctaButton": "申请成为合作伙伴",
+    "categories": {
+      "tech": {
+        "label": "技术与生态",
+        "description": "与主流基础设施深度兼容，共建稳定高性能的技术生态。"
+      },
+      "community": {
+        "label": "社区与推广",
+        "description": "连接开发者生态，推广开源技术与实践案例。"
+      },
+      "solutions": {
+        "label": "解决方案与商业",
+        "description": "携手领先的系统集成商，提供企业级能力。"
+      },
+      "academic": {
+        "label": "学术与科研",
+        "description": "深化产学研融合，赋能技术人才培养。"
+      }
+    },
+    "benefits": [
+      {
+        "title": "专业技术支持",
+        "description": "获得 IvorySQL 核心开发团队的直接技术指导，优先获取产品路线图与功能预览。"
+      },
+      {
+        "title": "联合品牌推广",
+        "description": "合作伙伴 Logo 展示在官网首页。通过联合白皮书、技术案例和线下活动共享流量。"
+      },
+      {
+        "title": "生态共同成长",
+        "description": "加入全球 IvorySQL 合作伙伴网络，建立深度连接，共同打造联合解决方案。"
+      }
+    ],
+    "certificateAlt": "兼容性认证 {n}"
+  },
+  "ReleasesPage": {
+    "metaTitle": "版本发布",
+    "metaDescription": "生产就绪的 IvorySQL 版本。浏览当前稳定版本和完整的发布历史，均基于最新的 PostgreSQL。",
+    "ogTitle": "IvorySQL 版本发布",
+    "heading": "版本发布",
+    "subheading": "生产就绪的开源版本，始终基于最新的 PostgreSQL。"
+  },
+  "ReleasesUI": {
+    "tabCurrent": "当前版本",
+    "tabHistorical": "历史版本",
+    "latestStable": "最新稳定版",
+    "released": "发布于",
+    "basedOn": "基于",
+    "colVersion": "版本",
+    "colReleased": "发布日期",
+    "showAll": "显示全部 {count} 个版本",
+    "showLess": "收起",
+    "contactPrompt": "想要提供 IvorySQL 软件包？",
+    "contactLink": "联系 support@ivorysql.org"
+  },
+  "VulnerabilityManagementPage": {
+    "metaTitle": "漏洞管理",
+    "metaDescription": "IvorySQL 漏洞上报流程、严重性评估与披露政策。",
+    "backToHome": "返回首页",
+    "badge": "安全",
+    "heading": "漏洞管理",
+    "subheading": "IvorySQL 社区如何处理安全漏洞——从上报到披露的完整流程。",
+    "response": {
+      "title": "漏洞响应",
+      "paragraph1": "IvorySQL 社区非常重视社区版本的安全性，IvorySQL 社区安全小组（SIG Security）负责接收、调查和披露 IvorySQL 社区相关的安全漏洞。我们鼓励漏洞研究人员和行业组织主动将 IvorySQL 社区的疑似安全漏洞报告给 IvorySQL 社区安全小组。我们会快速地响应、分析和解决上报的安全问题或安全漏洞。",
+      "paragraph2": "IvorySQL 基于 PostgreSQL，因此 PostgreSQL 发现与修复的漏洞同样适用于 IvorySQL。我们的开发团队持续关注 PostgreSQL 社区安全信息，并及时将 PostgreSQL 社区的漏洞补丁引入 IvorySQL。",
+      "linkLabel": "PostgreSQL 社区安全信息"
+    },
+    "supportedVersions": {
+      "title": "支持版本",
+      "paragraph": "漏洞响应流程主要支持 IvorySQL 社区的当前最新发行版和其分支版本。"
+    },
+    "process": {
+      "title": "漏洞处理流程",
+      "paragraph": "每一个安全漏洞都会有一个指定的人员进行跟踪和处理，协调员是 IvorySQL 安全小组的成员，负责跟踪和推动漏洞的修复和披露。漏洞端到端的处理流程如下图所示。",
+      "diagramAlt": "漏洞处理流程图",
+      "summary": "在这里我们主要介绍流程中漏洞上报、漏洞评估和漏洞披露这三部分内容。"
+    },
+    "reporting": {
+      "title": "漏洞上报方式",
+      "paragraph": "您可以通过邮件将 IvorySQL 产品的潜在安全漏洞发送到 IvorySQL 安全小组邮箱。"
+    },
+    "requiredInfo": {
+      "title": "漏洞上报内容要求",
+      "paragraph": "为了便于快速地确认和验证疑似漏洞，请在漏洞上报邮件中包含但不限于以下内容：",
+      "items": {
+        "basicInfo": {
+          "title": "基本信息",
+          "desc": "漏洞影响的模块、漏洞的触发条件和成功利用后对系统的影响等。"
+        },
+        "technicalDetails": {
+          "title": "技术细节",
+          "desc": "系统配置、定位方法、Exploit 的描述、PoC、问题重现方法和步骤等。"
+        },
+        "suggestedRemediation": {
+          "title": "修复方案建议",
+          "desc": "针对该漏洞的修复建议。"
+        },
+        "reporterDetails": {
+          "title": "上报者信息",
+          "desc": "上报者的组织和联系方式。"
+        },
+        "disclosurePlan": {
+          "title": "披露计划",
+          "desc": "上报者可能的漏洞披露计划或意向。"
+        }
+      }
+    },
+    "responseTime": {
+      "title": "邮件响应时间",
+      "paragraph": "我们将在 5 天内响应通过邮箱上报的疑似安全漏洞，并向上报者反馈漏洞处理的进展。"
+    },
+    "severity": {
+      "title": "漏洞严重性评估",
+      "paragraph": "我们将使用 CVSS（通用漏洞评分系统）标准评估漏洞的严重性：",
+      "levels": {
+        "critical": "致命",
+        "high": "高",
+        "medium": "中",
+        "low": "低",
+        "none": "无"
+      }
+    },
+    "disclosure": {
+      "title": "漏洞披露",
+      "paragraph": "为了保护 IvorySQL 用户的安全，社区在调查和修复期间会严格控制漏洞信息的范围，仅在直接处理该漏洞的相关人员之间传递。在修复方案发布之前，我们不会公开披露、讨论或确认相关安全问题。修复完成后，我们将通过 securityannounce@ivorysql.org 邮件订阅列表发布公告。"
+    }
+  },
+  "DownloadPage": {
+    "metaTitle": "下载",
+    "metaDescription": "下载 IvorySQL 安装包、客户端驱动和工具，快速开始使用兼容 Oracle 的 PostgreSQL。",
+    "heading": "下载",
+    "subheading": "下载 IvorySQL 安装包、客户端驱动和工具，快速开始使用兼容 Oracle 的 PostgreSQL。"
+  },
+  "DownloadUI": {
+    "database": {
+      "title": "IvorySQL 数据库",
+      "subtitle": "服务器安装包与发布资源",
+      "packageName": "IvorySQL 安装包",
+      "latestStable": "最新稳定版",
+      "description": "GitHub 上提供最新的服务器安装包、源码压缩包和发布资源。"
+    },
+    "drivers": {
+      "title": "IvorySQL 驱动",
+      "subtitle": "用于应用程序连接的客户端驱动"
+    },
+    "tools": {
+      "title": "相关工具",
+      "subtitle": "迁移与管理实用工具"
+    },
+    "table": {
+      "packageType": "安装包类型",
+      "size": "大小",
+      "integrityCheck": "完整性校验",
+      "download": "下载"
+    },
+    "copyChecksum": "复制校验值",
+    "contact": {
+      "needHelp": "需要帮助或有疑问？"
+    }
+  },
+  "ContributorsPage": {
+    "metaTitle": "贡献者墙",
+    "metaDescription": "展示为 IvorySQL 做出贡献的人们的展示墙。",
+    "backToHome": "返回首页",
+    "badge": "社区",
+    "heading": "IvorySQL 贡献者墙",
+    "description": "本页面展示了为 IvorySQL 做出贡献的社区成员。他们通过提交代码、提出 issue、修复 bug、完善文档、参与测试以及发展社区，推动着项目不断前进。",
+    "statContributors": "{count} 位贡献者",
+    "statYearsIncluded": "涵盖 {years}",
+    "statCategory": "分类：贡献者",
+    "filterAll": "全部贡献者",
+    "searchPlaceholder": "按姓名或 GitHub 用户名搜索",
+    "gridHeading": "社区贡献者",
+    "gridCount": "显示 {count} 位贡献者",
+    "noResults": "没有符合当前筛选条件的贡献者。",
+    "ctaWant": "想要出现在这里吗？从加入 IvorySQL 贡献流程开始。",
+    "ctaCertificate": "贡献者证书可在 IvorySQL 社区仓库中获取。",
+    "ctaCertificateLink": "查看或领取你的贡献者证书",
+    "ctaButton": "查看贡献指南"
+  },
+  "ExpertCommitteePage": {
+    "metaTitle": "专家顾问委员会",
+    "metaDescription": "了解为 IvorySQL 产品技术与社区发展提供指导的专家委员。",
+    "backToHome": "返回首页",
+    "eyebrow": "Community Leadership",
+    "heroTitle": "专家顾问委员会",
+    "heroDescription": "汇聚全球数据库领域的资深专家与开源领袖，为 IvorySQL 的产品技术、生态建设与社区发展提供长期、专业的战略指导。",
+    "statExperts": "{count} 位专家",
+    "statGlobal": "全球技术视野",
+    "statUnordered": "排名不分先后",
+    "sectionTitle": "委员会成员",
+    "orderNote": "专家按英文姓名首字母顺序排列，排名不分先后。",
+    "readBio": "查看简介",
+    "hideBio": "收起简介",
+    "joinTitle": "欢迎加入 IvorySQL 专家顾问委员会",
+    "joinDescription": "欢迎更多数据库专家加入 IvorySQL 专家顾问委员会，与我们共同推动开源数据库生态发展。",
+    "joinAction": "发送邮件联系我们"
+  },
+  "ContributionGuidelinesPage": {
+    "metaTitle": "贡献指南",
+    "metaDescription": "如何为 IvorySQL 做出贡献——从代码补丁到文档、测试和社区参与。",
+    "ogTitle": "IvorySQL 贡献指南",
+    "backToHome": "返回首页",
+    "badge": "参与共建",
+    "heroTitle": "IvorySQL 贡献指南",
+    "heroDescription": "IvorySQL 的成长离不开<strong>全球开发者、测试人员、文档作者、翻译者、社区布道者和使用者的持续参与</strong>。本页面概述社区当前的主要贡献方式与激励政策，详细的操作指南请参阅 <guide>IvorySQL 文档站贡献指南</guide>。",
+    "guideUrl": "https://docs.ivorysql.org/cn/ivorysql-doc/master/contribution/contribution_guide",
+    "codeOfConductUrl": "https://github.com/IvorySQL/IvorySQL/blob/master/CODE_OF_CONDUCT_CN.md",
+    "waysToContributeHeading": "贡献方式",
+    "waysToContributeIntro": "IvorySQL 社区始终坚持<strong>“开源无门槛，贡献无大小”</strong>。你可以根据自己的经验、兴趣和时间，选择适合自己的参与方式：",
+    "waysToContribute": [
+      {
+        "title": "代码类贡献",
+        "desc": "内核开发、功能迭代、Bug 修复、插件开发、生态工具适配、回归测试、代码评审等。"
+      },
+      {
+        "title": "非代码类贡献",
+        "desc": "Issue 反馈、文档完善、技术翻译、社区问答、线上或线下技术分享、案例征集、迁移实践总结、社区推广等。"
+      }
+    ],
+    "waysToContributeOutro": "如果你暂时还不准备直接修改代码，也完全可以先从<strong>问题复现、需求梳理、文档改进、测试建议或社区讨论</strong>开始参与。",
+    "incentivesHeading": "激励政策",
+    "incentivesIntro": "为鼓励更多开发者持续参与 IvorySQL 社区建设，社区也在不断完善贡献者的认可与激励机制：",
+    "incentives": [
+      {
+        "title": "荣誉认可",
+        "desc": "为贡献者颁发社区电子证书，并在官网贡献者墙记录社区足迹。"
+      },
+      {
+        "title": "导师支持",
+        "desc": "通过“灯塔”导师机制，提供资深开发者的一对一技术支持与 Code Review 帮助，协助贡献者成长。"
+      },
+      {
+        "title": "社区活动权益",
+        "desc": "活跃贡献者可获得 HOW 等社区活动的演讲、分享或参会机会。"
+      },
+      {
+        "title": "年度激励",
+        "desc": "社区会结合全年贡献情况评选优秀贡献者，并提供周边礼品、宣传展示和更多社区合作机会。"
+      }
+    ],
+    "incentivesOutro": "具体激励安排会根据社区计划持续迭代，但<strong>每一类持续、真实且有价值的贡献，都会被社区认真记录与认可</strong>。",
+    "communityProcessHeading": "社区协作流程",
+    "communityProcessIntro": "IvorySQL 社区采用一套闭环式开源协作流程，确保从问题提出到版本发布，每一个环节都能闭合反馈、持续改进。这一流程鼓励用户与开发者形成良性互动，让社区开发始终围绕实际需求持续演进。",
+    "communityProcessStepsIntro": "整个协作闭环流程如下：",
+    "processSteps": [
+      {
+        "emoji": "🐛",
+        "title": "提问题（Issue）",
+        "desc": "用户或开发者在 GitHub 的 Issues 页面提交 Bug、功能建议或使用反馈。"
+      },
+      {
+        "emoji": "💬",
+        "title": "问题讨论（Discussion）",
+        "desc": "维护者与社区成员就问题展开讨论，确认问题性质与优先级，加入 ToDo List。"
+      },
+      {
+        "emoji": "🛠️",
+        "title": "开发分支（Fork & Dev）",
+        "desc": "开发者认领 Issue，Fork 仓库并在本地开发测试，准备提交代码。"
+      },
+      {
+        "emoji": "🚀",
+        "title": "提交 Pull Request（PR）",
+        "desc": "将开发分支 Push 到 Fork 仓库后，向上游仓库发起合并请求。"
+      },
+      {
+        "emoji": "🧐",
+        "title": "代码评审（Review）",
+        "desc": "维护者或核心开发者对 PR 进行评审，提出修改建议并确保质量。"
+      },
+      {
+        "emoji": "🔀",
+        "title": "合并主分支（Merge）",
+        "desc": "审核通过后，PR 被合并至主分支，对应的 Issue 被关闭。"
+      },
+      {
+        "emoji": "📦",
+        "title": "版本发布（Release）",
+        "desc": "项目定期发布新版本（每季度小版本，每年大版本），包含最新的修复与功能。"
+      },
+      {
+        "emoji": "🧪",
+        "title": "用户测试（Test）",
+        "desc": "用户升级使用新版，反馈新问题，新的 Issue 随之产生，形成完整的反馈循环。"
+      }
+    ],
+    "processDiagramAlt": "IvorySQL 贡献流程图",
+    "processSummary": "通过这套完整的闭环协作机制，IvorySQL 实现了问题响应 → 开发贡献 → 质量保障 → 发布反馈的全流程闭合，推动项目持续健康演进。",
+    "codeOfConductNotice": "请务必阅读并遵守我们的 <coc>IvorySQL社区行为准则</coc>。",
+    "gettingStartedHeading": "快速开始",
+    "gettingStartedStep1": "注册 GitHub 账号，熟悉基本的 Git 工作流",
+    "gettingStartedStep2Heading": "签署贡献者许可协议（CLA）",
+    "claIndividual": "个人贡献者 CLA",
+    "claCorporate": "企业贡献者 CLA",
+    "claAtomGitNote": "提示：如果在 AtomGit 上进行贡献，可以自动完成 CLA 签署。",
+    "gettingStartedStep3": "阅读详细<guide>贡献指南</guide>，了解：",
+    "gettingStartedStep3Items": [
+      "社区协作流程",
+      "代码贡献指南",
+      "生态组件适配流程",
+      "测试和文档要求"
+    ],
+    "gettingStartedStep4": "选择感兴趣的方向，找到要处理的 Issue",
+    "gettingStartedStep5": "提交你的第一个 PR，加入社区！",
+    "needHelpHeading": "需要帮助？",
+    "needHelpItems": [
+      {
+        "label": "邮件列表",
+        "value": "https://lists.ivorysql.org"
+      },
+      {
+        "label": "GitHub Discussions",
+        "value": "https://github.com/IvorySQL/IvorySQL/discussions"
+      },
+      {
+        "label": "社区群组",
+        "value": "微信、Discord 等聊天群"
+      }
+    ],
+    "needHelpFooter": "如果你对代码贡献感兴趣，但暂时还没有明确的切入点，或者这是你第一次参与 IvorySQL，<guide>详细贡献指南</guide>将帮助你找到清晰的起点，降低参与门槛。"
+  },
+  "HomeMeta": {
+    "metaTitle": "IvorySQL - 开源的 Oracle 兼容 PostgreSQL 数据库",
+    "metaDescription": "开源的 Oracle 兼容 PostgreSQL 数据库。基于 PostgreSQL 构建、兼容 Oracle 的高性能数据库，专为可靠性与性能而生。"
+  }
+}

@@ -1,0 +1,40 @@
+---
+title: "国内某金融机构：总账系统 Oracle 存储过程国产化替代"
+description: "总账、SMIS 报表、个贷应用三大核心系统涉及 Oracle 存储过程的国产化替代需求，IvorySQL 在攻克海量数据读取内存溢出、深度兼容 Oracle Package 与集合数据类型等难题后，完成了核心业务系统的稳定切换。"
+industry: "finance"
+industryLabel: "金融"
+headline: "核心业务系统 Oracle 存储过程国产化替换"
+stats:
+  - value: "3"
+    label: "核心系统完成 Oracle 替换"
+  - value: "130+"
+    label: "总账日结/年结子需求验证通过"
+order: 10
+slug: "financial-core-system-oracle-replacement"
+---
+
+<h2 id="background">项目背景</h2>
+<p>总账、SMIS 报表、个贷应用三个核心系统均涉及 Oracle（存储过程）替换的需求，是该金融机构核心业务系统数字化转型的关键一步。</p>
+
+<h2 id="highlights">项目亮点</h2>
+<ul>
+  <li>采用开源的 IvorySQL 技术和自主研发的国产数据库技术路线，成功完成了核心业务系统底层 Oracle 数据库的替换工作，并确保了业务的稳定运行。经过严格测试，新平台业务系统的性能指标和稳定性指标均达到了预期要求。</li>
+  <li>在项目实施过程中，成功攻克了海量数据读取内存溢出的问题，<strong>深度兼容 Oracle Package 功能</strong>。</li>
+  <li>对<strong>集合数据类型</strong>进行了全面兼容，对大量的 <strong>Oracle 系统视图、特殊模式元素以及分区索引</strong>等进行了全面支持，新平台能够更好地适应 Oracle 数据库的特点，提高了系统的稳定性和可靠性。</li>
+  <li>新平台具备强大的<strong>事务处理能力和语法词法兼容性</strong>。这不仅打破了 Oracle 与 IvorySQL 之间存在的基因区别壁垒，还提高了系统的灵活性和可扩展性。通过这些技术手段，成功实现了核心业务系统的升级改造，为该系统的数字化转型奠定了坚实基础。</li>
+</ul>
+
+<h2 id="scope">总账系统改造范围</h2>
+<p>本次替换覆盖总账系统、SMIS 报表与个贷应用的完整业务链路，并配套了可视化集群管理、开发管理与自动化迁移工具，以及一批数据库层面的共研兼容能力：</p>
+<figure>
+  <img src="/images/stories/financial-core-system-oracle-replacement/solution-architecture.png" alt="总账系统改造范围与共研能力架构图" />
+  <figcaption>总账系统功能范围、共研工具支撑能力（可视化集群管理平台／开发管理工具／自动化迁移工具）与共研数据库支撑能力三层架构图</figcaption>
+</figure>
+<ul>
+  <li><strong>总账系统 / SMIS 报表 / 个贷应用</strong>：文件导入、接口导入、总账凭证导入、凭证过账、日月结（58 个子需求）、年结（25 个子需求）、年结试算（47 个子需求）、JOB 测试、总分科目映射及总总测试、汇率计算、余额备份、机构初始化</li>
+  <li><strong>共研工具支撑能力</strong>：可视化集群管理平台（备份管理、事件消息、监控预警、同异步切换、增删节点、主备切换）、开发管理工具（语法提示、执行计划、数据库 ER 图、备份还原、Oracle 包管理、SESSION 管理）、自动化迁移工具（并行迁移、分片迁移、多线程迁移、在/离线迁移）</li>
+  <li><strong>共研数据库支撑能力</strong>：集合类型、系统包/视图兼容、自治事务支持、分区语法支持、全局变量、多层嵌套</li>
+</ul>
+
+<h2 id="outcome">项目成果</h2>
+<p>采用开源的 IvorySQL 技术和自主研发的国产数据库技术路线，成功完成了核心业务系统底层 Oracle 数据库的替换工作，并确保了业务的稳定运行；新平台的性能指标和稳定性指标均达到预期要求，为该系统的数字化转型奠定了坚实基础。</p>

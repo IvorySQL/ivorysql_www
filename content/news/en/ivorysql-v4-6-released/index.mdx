@@ -1,0 +1,79 @@
+---
+title: "IvorySQL 4.6 Released"
+date: "2025-09-11"
+category: "product"
+categoryLabel: "Product"
+description: "Full support for PostgreSQL 17.6 with new features and known issue fixes."
+image: "/images/news/ivorysql-v4-6-released-en.png"
+slug: "ivorysql-v4-6-released"
+---
+
+
+    
+
+    
+      <p>
+        IvorySQL 4.6 was officially released on September 10, 2025!
+      </p>
+      <p>
+        This new version offers full support for PostgreSQL 17.6, with a host of new features added and known issues fixed.
+      </p>
+
+      <h2 id="enhanced-features">Enhanced Features</h2>
+      <h3 id="pg-enhancements">PostgreSQL 17.6 Enhancements:</h3>
+      <ul>
+        <li>Strengthened security checks in planner estimation functions.</li>
+        <li>Prevented pg_dump scripts from being exploited to attack users performing restore operations.</li>
+        <li>Converted newlines to spaces in names included in comments of pg_dump output.</li>
+        <li>Fixed a distance calculation error in the support functions for BRIN numeric_minmax_multi_ops.</li>
+        <li>Addressed the regression issue in the size of XML input accepted by the system.</li>
+      </ul>
+      <p>
+        For more details, see the <a href="https://www.postgresql.org/docs/release/17.6/" target="_blank" rel="noopener noreferrer">PostgreSQL Release Notes</a>.
+      </p>
+
+      <h2 id="new-features">New Features</h2>
+      <ul>
+        <li>Upgraded to the PostgreSQL 17.6 kernel.</li>
+        <li><strong>MongoDB-compatible solutions:</strong> Delivered MongoDB-compatible support with FerretDB and DocumentDB.</li>
+        <li><strong>Full-platform LoongArch packaging:</strong> Provided full-platform installation packages for the LoongArch architecture, supporting mainstream operating systems at home and abroad including Red Hat, Debian, Kylin, UnionTech and Ningsi. X86, ARM and MIPS architectures are also supported.</li>
+        <li><strong>IvorySQL Online Trial:</strong> Launched a web-based platform for users to experience IvorySQL V4.6 online, enabling direct database interactions via a browser interface.</li>
+        <li><strong>Containerized deployment support (Docker Swarm):</strong> Enabled deployment of standalone IvorySQL instances and high-availability clusters in Docker Swarm environments.</li>
+        <li><strong>Containerized deployment support (Kubernetes):</strong> Enabled deployment of standalone IvorySQL instances and high-availability clusters on Kubernetes (K8s) using Helm.</li>
+        <li><strong>IvorySQL Cloud v4.0 Released:</strong> The IvorySQL Cloud platform now supports subscription management for IvorySQL v4 databases, as well as comprehensive management of its surrounding ecosystem.</li>
+      </ul>
+
+      <h2 id="fixed-issues">Fixed Known Issues</h2>
+      <ul>
+        <li>Resolved the missing libcrypt issue on the aarch64 platform.</li>
+        <li>Fixed the incorrect compilation and installation of extensions prefixed with test_ during make and make install execution.</li>
+        <li><strong>Documentation:</strong> Corrected several spelling errors.</li>
+        <li><strong>Documentation:</strong> Fixed errors in the installation section.</li>
+        <li><strong>Documentation:</strong> Updated the community contribution process.</li>
+      </ul>
+      <p>For more details:</p>
+      <ul>
+        <li><a href="https://github.com/IvorySQL/IvorySQL/releases/tag/IvorySQL_4.6" target="_blank" rel="noopener noreferrer">IvorySQL 4.6 Release Notes</a></li>
+        <li><a href="https://github.com/IvorySQL/IvorySQL/commits/IVORY_REL_4_STABLE" target="_blank" rel="noopener noreferrer">Complete Changelog</a></li>
+      </ul>
+
+      <h2 id="source-code">Source Code</h2>
+      <p>IvorySQL primarily consists of 2 code repositories:</p>
+      <ul>
+        <li>IvorySQL Database Source Code: <a href="https://github.com/IvorySQL/IvorySQL" target="_blank" rel="noopener noreferrer">https://github.com/IvorySQL/IvorySQL</a></li>
+        <li>IvorySQL Official Website: <a href="https://github.com/IvorySQL/Ivory-www" target="_blank" rel="noopener noreferrer">https://github.com/IvorySQL/Ivory-www</a></li>
+      </ul>
+
+      <h2 id="contributors">Acknowledgements to Contributors</h2>
+      <p>
+        The following individuals (listed in alphabetical order) contributed to this release as patch authors, committers, reviewers, testers or issue reporters:
+      </p>
+      
+        caffiendo, Cédric Villemain, Fawei Zhao, flyingbeecd, Ge Sui, Grant Zhou, huchangqiqi, Pedro Lopez, RRRRhl, Ruohang Feng, shangwei007, Shawn Yan, Shaolin Chu, Shihua Yang, Shiji Niu, Shuntian Jiao, tiankongbuqi, Xiangyu Liang, Xinjie Lv, Xueyu Gao, Yanliang Lei, Yasir Hussain Shah, Yuan Li, Zheng Tao, Zhenhao Pan, Zhuoyan Shi.
+      
+      <p><strong>Thanks to all the contributors!</strong></p>
+
+      <h2 id="try-it">Try It Out Now</h2>
+      <p>
+        We welcome all community members to try IvorySQL 4.6. If you encounter any issues, please submit your feedback via <a href="https://github.com/IvorySQL/IvorySQL/issues" target="_blank" rel="noopener noreferrer">GitHub Issues</a>, and we will send you exclusive IvorySQL merchandise as a gift!
+      </p>

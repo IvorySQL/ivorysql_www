@@ -1,0 +1,84 @@
+---
+title: "IvorySQL 5.4 发布：基于 PostgreSQL 18.4，强化 AI 能力与周边生态"
+date: "2026-06-17"
+category: "product"
+categoryLabel: "产品"
+description: "基于 PG 18.4 内核，新增 IvorySQL Skills、在线体验、Cloud 5.4、容器化部署支持及 20+ 扩展，覆盖 AI、GIS、全文检索等领域。"
+image: "/images/news/ivorysql-5.4-zh.png"
+slug: "ivorysql-5.4-released"
+---
+
+<p>
+  2026 年 6 月 17 日，IvorySQL 社区正式发布 <strong>IvorySQL 5.4</strong>。作为兼容 Oracle 的开源 PostgreSQL 数据库，IvorySQL 5.4 基于 <strong>PostgreSQL 18.4</strong> 构建，带来了多项内核更新、功能增强和生态扩展，并进一步完善 AI、云原生部署以及数据库管理能力。
+</p>
+<p>完整更新清单请访问官方文档网站：<a href="https://docs.ivorysql.org/" target="_blank" rel="noopener noreferrer">docs.ivorysql.org</a></p>
+
+<h2 id="kernel">PostgreSQL 18.4 内核更新</h2>
+<p>IvorySQL 5.4 同步升级至 PostgreSQL 18.4，继承了社区最新的稳定性与安全修复，包括：</p>
+<ol>
+  <li>防止处理启动数据包（startup packets）时出现无限递归问题</li>
+  <li>修复内存分配计算中的多项整数溢出问题</li>
+  <li>在 <code>pg_createsubscriber</code> 中正确引用（转义）订阅名称</li>
+  <li>在逻辑复制源（logical replication origin）检查中正确引用对象名称</li>
+  <li>在 <code>ts_headline()</code> 中拒绝超长选项参数</li>
+  <li>在恢复属性 MCV（Most Common Values，最常见值）统计信息时检测异常输入</li>
+</ol>
+
+<h2 id="features">IvorySQL 5.4 关键特性</h2>
+
+<h3>升级至 PostgreSQL 18.4 内核</h3>
+<p>IvorySQL 内核升级至 PostgreSQL 18.4 版本，进一步提升数据库的稳定性、安全性和兼容性。</p>
+
+<h3>IvorySQL Skills：让 AI 成为数据库专家</h3>
+<p>项目地址：<a href="https://github.com/IvorySQL/skills" target="_blank" rel="noopener noreferrer">github.com/IvorySQL/skills</a></p>
+<p>IvorySQL Skills 为 AI 助手提供数据库知识与操作能力，使其能够更高效地理解、使用和管理 IvorySQL 数据库，推动 AI 与数据库深度融合。</p>
+
+<h3>在线体验 IvorySQL 5.4</h3>
+<p>在线体验地址：<a href="http://trial.ivorysql.org/" target="_blank" rel="noopener noreferrer">trial.ivorysql.org</a></p>
+<p>基于浏览器的交互式体验环境现已上线，用户无需安装，即可实时体验和评估 IvorySQL 5.4 的各项能力。</p>
+
+<h3>全平台发行支持</h3>
+<p>IvorySQL 5.4 提供覆盖 <strong>X86、ARM、MIPS 和 LoongArch</strong> 等主流架构的安装包，满足不同硬件平台下的部署需求。</p>
+
+<h3>云原生容器化部署</h3>
+<p>支持通过 <strong>Docker Compose、Podman、Swarm、Helm</strong> 以及 <strong>IvorySQL 5.4 Operator</strong>，一键部署单机或高可用集群，进一步降低数据库部署与运维成本。</p>
+
+<h3>IvorySQL Cloud 5.4 发布</h3>
+<p>IvorySQL Cloud 是面向数据库全生命周期管理的可视化平台，提供数据库订阅管理、生命周期运维编排以及生态服务集成能力。</p>
+
+<h3>持续扩展 PostgreSQL 生态</h3>
+<p>IvorySQL 5.4 新增支持多项 PostgreSQL 扩展与工具，覆盖 AI、GIS、全文检索、连接池、高可用、运维监控等领域：</p>
+<ul>
+  <li><strong>AI 与向量</strong>：pg_ai_query、pgvector</li>
+  <li><strong>图数据库</strong>：AGE</li>
+  <li><strong>GIS 与路网</strong>：PostGIS、pgRouting</li>
+  <li><strong>中文分词</strong>：pg_jieba、Zhparser、pg_bigm</li>
+  <li><strong>全文检索</strong>：PGroonga、pg_textsearch</li>
+  <li><strong>运维与调度</strong>：pg_cron、pgagent</li>
+  <li><strong>监控分析</strong>：system_stats、pg_stat_monitor、pg_show_plans</li>
+  <li><strong>SQL 增强</strong>：ddlx、plpgsql_check、pg_hint_plan</li>
+  <li><strong>网络访问</strong>：pgsql-http、pg_curl</li>
+  <li><strong>中间件</strong>：PgBouncer</li>
+  <li><strong>异构集成</strong>：redis_fdw</li>
+  <li><strong>分区管理</strong>：pg_partman</li>
+  <li><strong>WAL 解码</strong>：wal2json</li>
+</ul>
+
+<h3>SQL 兼容性增强</h3>
+<p>IvorySQL 持续完善 SQL 兼容能力。本次版本增强了 EXTRACT 函数支持，兼容更多 SQL 语法变体，进一步提升数据库迁移和应用适配体验。</p>
+
+<h2 id="repos">源代码仓库</h2>
+<ul>
+  <li>数据库源码：<a href="https://github.com/IvorySQL/IvorySQL" target="_blank" rel="noopener noreferrer">github.com/IvorySQL/IvorySQL</a></li>
+  <li>官方网站：<a href="https://github.com/IvorySQL/Ivory-www" target="_blank" rel="noopener noreferrer">github.com/IvorySQL/Ivory-www</a></li>
+  <li>官方文档：<a href="https://github.com/IvorySQL/IvorySQL_docs" target="_blank" rel="noopener noreferrer">github.com/IvorySQL/IvorySQL_docs</a></li>
+  <li>Docker 镜像：<a href="https://github.com/IvorySQL/docker_library" target="_blank" rel="noopener noreferrer">github.com/IvorySQL/docker_library</a></li>
+</ul>
+
+<h2 id="contributors">贡献者</h2>
+<p>感谢以下贡献者（按字母顺序排列）以补丁作者、提交者、评审者、测试人员或问题报告者等身份参与 IvorySQL 5.4 的发布：</p>
+<p>3296442201 · Adria0615 · anapplebeee · Cédric Villemain · Fawei Zhao · Ge Sui · Grant Zhou · hanjianqiao · jerome-peng · liketoochao · movead123 · msdnchina · Pierre Forstmann · Rophy Tsai · Shawn Yan · Shuntian Jiao · Steven Niu · tian1220A · xiaoyu509 · Xiaohui Liu · Xiangyu Liang · Xinjie LYU · Xueyu Gao · yes7rose · Yasir Hussain Shah · z20081120087 · Zhe Zhang · Zhenhao Pan · Zheng Tao · Zhuoyan Shi · zuinuan123</p>
+
+<h2 id="welcome">欢迎试用</h2>
+<p>完整更新日志：<a href="https://github.com/IvorySQL/IvorySQL/compare/IvorySQL_5.3...IvorySQL_5.4" target="_blank" rel="noopener noreferrer">GitHub 对比</a></p>
+<p>欢迎社区伙伴下载和体验 IvorySQL 5.4。如果您在使用过程中发现问题，欢迎提交 <a href="https://github.com/IvorySQL/IvorySQL/issues" target="_blank" rel="noopener noreferrer">Issue</a>。每一位问题反馈者，都有机会获得 IvorySQL 社区精美周边。</p>

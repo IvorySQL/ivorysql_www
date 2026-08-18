@@ -1,0 +1,53 @@
+---
+title: PostgreSQL Technology Summit (Beijing)
+date: '2025-04-22'
+location: Beijing
+eventType: Summit
+type: Offline
+image: /images/events/event-202503.png
+description: >-
+  IvorySQL presented compatibility innovation practices under dual-parser architecture at the Beijing PG Summit.
+slug: event-202503
+---
+
+#
+Recap of PostgreSQL Technology Summit (Beijing) | Compatibility Innovation Practices under IvorySQL Dual-Parser Architecture
+
+📅 Date: 2025-04-22
+📍 Location: Beijing
+🌍 Offline Event
+
+On April 22, 2025, the "PostgreSQL Technology Summit (Beijing)," hosted by the PG Branch of China Open Source Software Promotion Alliance and co-initiated by Liu Huayang (PostgreSQL ACE/Head of PG Branch Beijing & Tianjin User Groups), was successfully held.
+
+With the theme "Integration of PG and AI," IvorySQL R&D Engineer Jiao Shuntian was invited to deliver a keynote sharing — "IvorySQL V4: Compatibility Innovation Practices under Dual-Parser Architecture."
+
+![Jiao Shuntian Sharing on Site](/images/events/event-202503-1.jpg)
+
+## I. Compatibility Overview
+
+1. Core Compatibility Features
+* **Oracle Compatibility Framework**: Supports PL/iSQL, Oracle Package management, Invisible Columns, XML functions (11 new functions added), Sequences, etc.
+* **Heterogeneous Data Interaction**: Provides Foreign Data Wrappers such as Oracle_fdw and Postgres_fdw.
+* **Key Innovations**:
+* **Invisible Columns**: Control column visibility via ALTER TABLE.
+* **Oracle Package**: Supports package-level permission control and caching mechanisms.
+
+2. Real-world Project Case (A Domestic Financial System)
+* **Objective**: Replace Oracle stored procedures to meet requirements for core systems like the general ledger.
+* **Results**: Performance and stability standards met; overcame memory overflow issues in massive data reading; provided deep support for Oracle Package functions.
+
+## II. Dual-Parser Architecture Design
+
+Based on **PostgreSQL 17**, IvorySQL has expanded with a dual-parser (PG/Oracle parser) and dual-port design (5432/1521).
+
+Key Technical Implementations
+* **Parser Hook Mechanism**: Dynamically bind parsers via sql_raw_parser.
+* **Pluggable Design**: Built-in IvorySQL_ORA plugin implementing data types, system views, MERGE commands, etc.
+
+## III. Community Development and Future Outlook
+
+* **Technical Direction**: Developing IvorySQL V5 based on PostgreSQL 18, optimizing cloud-native support.
+* **Global Cooperation**: Promoting project co-construction with OnGres (Spain) and Data Bene (France).
+* **Participation Incentives**: Providing honorary certificates and limited-edition merchandise (hoodies, backpacks, mugs, etc.) as rewards.
+
+Follow our WeChat Account [IvorySQL开源数据库社区] and reply with the keyword **"20250419"** to get the full PPT download link.

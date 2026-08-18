@@ -1,0 +1,82 @@
+---
+title: PostgreSQL 18 Features Webinar
+date: '2025-10-16'
+location: Online
+eventType: Webinar
+type: Online
+image: /images/events/event-202514.png
+description: >-
+  Deep dive into the new features coming in PostgreSQL 18.
+slug: event-202514
+---
+
+#
+Webinar Recap | Deep Dive into the Six Major New Features of PostgreSQL 18
+
+📅 Date: 2025-10-16
+🌍 Online Webinar
+
+On October 16, the IvorySQL community organized an online webinar themed: "Deep Dive into the Six Major New Features of PostgreSQL 18." Below is the recap of this session.
+
+## Speaker Profiles
+
+- Shixin Wang, Database Software Engineer
+
+- Hu Zhang, Database Software Engineer
+
+- Zongliang Quan, Database Software Engineer
+
+- Ke Lan, Database Software Engineer
+
+- Yuefei Shi, Database Software Engineer
+
+- Xunqi Hu, Database Software Engineer
+
+- Shuntian Jiao, Database Software Engineer
+
+Guest Moderator: Chong Peng, PostgreSQL ACE, member of the PostgreSQL Chinese Community Committee, 2021 Enthusiastic Expert of Gauss Squirrel Society, openGauss Tianjin User Group Ambassador, external technical consultant for Yijing Technology, and member of the IvorySQL Expert Advisory Committee. Currently working at Enmotech, focusing on the practical research of new technologies and features in the PG series databases. Originally from Honghu, Jingzhou, he runs the personal WeChat account "Elephant Chu Journey."
+
+## Content Introduction
+
+In this webinar, the IvorySQL community dismantled six core features to comprehensively enhance your database capabilities:
+
+- Asynchronous I/O Framework
+
+- Skip Scan
+
+- Virtual Generated Columns
+
+- UUIDv7 Enhancements
+
+- EXPLAIN Command Upgrades
+
+- OAuth 2.0 Authentication
+
+These six features range from low-level I/O optimization to high-level developer experience, and from query performance to security protection, comprehensively enhancing PostgreSQL's competitiveness in modern applications.
+
+## Q&A
+
+Q1: Under what circumstances is it NOT suitable to enable Async I/O?
+
+- It is not suitable when there is no capacity to perform self-pressure tests to calculate various AIO-related GUC parameters required for one's own production environment;
+
+- It is not suitable for heavy write scenarios (PG 18 AIO does not yet support writes);
+
+- It is not suitable to use io_uring as the AIO underlying implementation on old Linux kernels.
+
+Specifically: For Linux kernel versions &lt; 5.1, the original PostgreSQL 18 cannot use io_methods=io_uring; for Linux kernels &lt; 5.6, it is not recommended to use io_method=io_uring.
+
+Q2: If OAUTH authentication is used, how should the additional resource consumption be evaluated? For example, performance and network?
+
+Since PostgreSQL itself is completely decoupled from the authorization server, resource consumption primarily depends on the authorization server.
+For the authorization server, performance consumption involves tasks like token generation, handling network requests, and maintenance work such as log collection and archiving, which consume CPU and memory resources. The storage of tokens and the MAP relationship between database users and tokens will consume server storage resources. Overall, CPU and memory consumption depend on the authorization frequency (the login frequency of PostgreSQL users), while storage consumption depends on the number of PostgreSQL users.
+From a network overhead perspective, PostgreSQL 18 needs to make multiple HTTP requests to the authorization server for initial token acquisition. High network latency will affect login time. Additionally, users need to send HTTP requests to the authorization server for verification, so the network latency between the user and the authorization server must also be considered. During token verification, if an external validator and the PostgreSQL server are on the same machine, there is no network communication; however, if online token verification is used, the latency between the PostgreSQL server and the authorization server must be taken into account.
+To optimize performance, the authorization server should be placed in the same local network as PostgreSQL as much as possible, and local verification can be considered for external validators to reduce network overhead.
+
+Q3: Are there any good solutions for logical replication not supporting virtual columns?
+
+In PostgreSQL 18, tables with virtual columns can actually undergo logical replication. Because the value of a virtual column depends on other columns, as long as those other columns are replicated, the virtual column value can be calculated during a query. Logical replication simply cannot specify a virtual column individually (since virtual columns do not store values), but it can specify stored columns.
+
+PPT Download: Follow the official WeChat account [IvorySQL开源数据库社区] and reply with the keyword 20251016 to download the PPT.
+
+Playback Video: https://www.bilibili.com/video/BV17rWkzZE8Q/

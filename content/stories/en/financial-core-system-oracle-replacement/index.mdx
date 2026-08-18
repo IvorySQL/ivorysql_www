@@ -1,0 +1,40 @@
+---
+title: "Leading Financial Institution: Replacing Oracle Stored Procedures in the Core General Ledger System"
+description: "The general ledger, SMIS reporting, and consumer-loan systems all depended on Oracle stored procedures. After solving out-of-memory issues on massive data reads and deeply supporting Oracle packages and collection types, IvorySQL powered a stable cutover of the customer's core business systems."
+industry: "finance"
+industryLabel: "Financial Services"
+headline: "A domestic replacement for Oracle stored procedures in core business systems"
+stats:
+  - value: "3"
+    label: "core systems migrated off Oracle"
+  - value: "130+"
+    label: "general-ledger closing sub-requirements validated"
+order: 10
+slug: "financial-core-system-oracle-replacement"
+---
+
+<h2 id="background">Background</h2>
+<p>Three core systems — the general ledger, SMIS reporting, and the consumer-loan application — all depended on Oracle stored procedures that needed to be replaced, marking a key step in this financial institution's core-system digital transformation.</p>
+
+<h2 id="highlights">Project Highlights</h2>
+<ul>
+  <li>By adopting the open-source IvorySQL technology stack together with an in-house domestic database roadmap, the team successfully replaced the Oracle database underlying the core business systems while keeping the business running smoothly. After rigorous testing, the new platform's performance and stability metrics both met expectations.</li>
+  <li>During implementation, the team solved an out-of-memory issue encountered when reading massive volumes of data, and achieved <strong>deep compatibility with Oracle Package functionality</strong>.</li>
+  <li>The platform achieved full compatibility with <strong>collection data types</strong>, and comprehensively supports a large number of <strong>Oracle system views, special schema elements, and partition indexes</strong> — allowing the new platform to better match Oracle's characteristics and improving system stability and reliability.</li>
+  <li>The new platform delivers strong <strong>transaction-processing capability and syntax/lexical compatibility</strong>. This broke down the structural differences between Oracle and IvorySQL while improving system flexibility and extensibility — together enabling a successful upgrade of the core business systems and laying a solid foundation for the customer's digital transformation.</li>
+</ul>
+
+<h2 id="scope">General Ledger System Modernization Scope</h2>
+<p>The replacement covered the full workflow of the general ledger system, SMIS reporting, and the consumer-loan application, paired with visual cluster management, development tooling, automated migration tools, and a set of jointly developed database-level compatibility capabilities:</p>
+<figure>
+  <img src="/images/stories/financial-core-system-oracle-replacement/solution-architecture-en.png" alt="General ledger modernization and joint-development capability architecture" />
+  <figcaption>General ledger system scope, jointly developed tooling capabilities (visual cluster management / development tools / automated migration tools), and jointly developed database capabilities</figcaption>
+</figure>
+<ul>
+  <li><strong>General ledger / SMIS reporting / consumer-loan application</strong>: file import, interface import, general-ledger voucher import, voucher posting, daily/monthly closing (58 sub-requirements), annual closing (25 sub-requirements), annual trial closing (47 sub-requirements), JOB testing, chart-of-accounts mapping and reconciliation testing, exchange-rate calculation, balance backup, and institution initialization</li>
+  <li><strong>Jointly developed tooling capabilities</strong>: a visual cluster management platform (backup management, event messaging, monitoring &amp; alerting, sync/async switchover, node scaling, primary/standby switchover), development management tools (syntax hints, execution plans, database ER diagrams, backup &amp; restore, Oracle package management, session management), and automated migration tools (parallel migration, sharded migration, multi-threaded migration, online/offline migration)</li>
+  <li><strong>Jointly developed database capabilities</strong>: collection types, system package/view compatibility, autonomous transaction support, partition syntax support, global variables, and nested structures</li>
+</ul>
+
+<h2 id="outcome">Outcome</h2>
+<p>By adopting the open-source IvorySQL technology stack and an in-house domestic database roadmap, the team successfully replaced the Oracle database underlying the customer's core business systems while keeping operations running smoothly. The new platform's performance and stability metrics both met expectations, laying a solid foundation for the customer's digital transformation.</p>

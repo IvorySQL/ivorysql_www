@@ -1,0 +1,1075 @@
+{
+  "Navbar": {
+    "openMenu": "Open main menu",
+    "docs": "Docs",
+    "blog": "Blog",
+    "products": {
+      "trigger": "Products",
+      "coreCapabilities": "Core Capabilities",
+      "applicationScenarios": "Application Scenarios",
+      "oracleCompat": {
+        "title": "Oracle Compatibility",
+        "description": "Deep Oracle syntax and feature compatibility, seamless migration"
+      },
+      "ecosystem": {
+        "title": "Ecosystem",
+        "description": "Tools, domestic CPU/OS certifications, and compatibility certificates"
+      },
+      "cloudNative": {
+        "title": "Cloud Native",
+        "description": "Containerized deployment via Docker Compose, Helm, and Operator"
+      },
+      "scenarios": {
+        "enterpriseDb": {
+          "title": "Enterprise Database",
+          "description": "ERP, transactions, and financial systems"
+        },
+        "lbs": {
+          "title": "LBS Applications",
+          "description": "Geospatial queries via PostGIS"
+        },
+        "unifiedData": {
+          "title": "Unified Data Platform",
+          "description": "OLTP and real-time analytics"
+        },
+        "aiEmpowered": {
+          "title": "AI-Empowered Database",
+          "description": "NL2SQL and AI Agent reasoning"
+        },
+        "dbMigration": {
+          "title": "Database Migration",
+          "description": "Oracle to IvorySQL seamless migration"
+        }
+      }
+    },
+    "community": {
+      "trigger": "Community",
+      "groups": {
+        "community": "Community",
+        "getInvolved": "Get Involved"
+      },
+      "events": {
+        "title": "Events",
+        "description": "Conferences, meetups, and online talks"
+      },
+      "expertCommittee": {
+        "title": "Expert Advisory Committee",
+        "description": "Database specialists guiding IvorySQL's direction"
+      },
+      "news": {
+        "title": "News",
+        "description": "Product releases and community updates"
+      },
+      "partners": {
+        "title": "Partners",
+        "description": "Ecosystem partner showcase"
+      },
+      "customerStories": {
+        "title": "Customer Stories",
+        "description": "User case studies and experiences"
+      },
+      "vulnerabilityManagement": {
+        "title": "Vulnerability Management",
+        "description": "Report and track security vulnerabilities"
+      },
+      "contributingGuide": {
+        "title": "Contributing Guide",
+        "description": "Learn how to contribute code to IvorySQL"
+      },
+      "contributors": {
+        "title": "Contributors",
+        "description": "Stories from our contributors"
+      },
+      "roadmap": {
+        "title": "Roadmap",
+        "description": "Product roadmap and future plans"
+      },
+      "issueTracker": {
+        "title": "Issue Tracker",
+        "description": "Report bugs and feature requests"
+      }
+    },
+    "resources": {
+      "trigger": "Resources",
+      "groups": {
+        "gettingStarted": "Getting Started",
+        "repositories": "Repositories"
+      },
+      "downloads": {
+        "title": "Downloads",
+        "description": "Get the latest releases and release notes"
+      },
+      "releases": {
+        "title": "Releases",
+        "description": "Release history and version changelog"
+      },
+      "installation": {
+        "title": "Installation",
+        "description": "Quick installation guide"
+      },
+      "onlineTrial": {
+        "title": "Online Trial",
+        "description": "No installation needed — try it right in your browser"
+      },
+      "sandboxes": {
+        "title": "Sandboxes",
+        "description": "Try IvorySQL in a sandbox environment on PGNexus.ai"
+      },
+      "github": {
+        "title": "GitHub",
+        "description": "Primary code repository"
+      },
+      "atomgit": {
+        "title": "AtomGit",
+        "description": "OpenAtom Foundation platform"
+      },
+      "gitee": {
+        "title": "Gitee",
+        "description": "Mirror for Chinese developers"
+      }
+    }
+  },
+  "Footer": {
+    "ctaTitle": "Start using IvorySQL today",
+    "ctaDescription": "Open source, Oracle compatible PostgreSQL — built for reliability and performance.",
+    "getStarted": "Get Started",
+    "onlineTrial": "Online Trial",
+    "sandboxes": "Sandboxes",
+    "brandDescription": "Open Source Oracle compatible PostgreSQL, based on PostgreSQL with enterprise-grade features.",
+    "columns": {
+      "docs": "Docs",
+      "community": "Community",
+      "developers": "Developers"
+    },
+    "docsLinks": {
+      "documentation": "Documentation",
+      "releases": "Releases",
+      "onlineTrial": "Online Trial"
+    },
+    "communityLinks": {
+      "mailingLists": "Mailing Lists",
+      "discord": "Discord",
+      "twitter": "Twitter"
+    },
+    "developerLinks": {
+      "github": "GitHub",
+      "atomgit": "AtomGit",
+      "gitee": "Gitee",
+      "contributors": "Contributors",
+      "roadmap": "Roadmap"
+    },
+    "copyright": "Copyright © {year} IvorySQL"
+  },
+  "Common": {
+    "getStarted": "Get Started",
+    "onlineTrial": "Online Trial",
+    "sandboxes": "Sandboxes",
+    "tryItNow": "Try it now",
+    "readDocs": "Read docs",
+    "visit": "Visit"
+  },
+  "Hero": {
+    "tagline": "Open Source Oracle compatible PostgreSQL",
+    "description": "A creative and powerful database based on PostgreSQL with Oracle compatibility, built for reliability and performance."
+  },
+  "Quickstart": {
+    "heading": "Get Started in Minutes",
+    "description": "Choose your preferred way to start using IvorySQL — from local install to instant browser trial.",
+    "quickInstall": {
+      "title": "Quick Install",
+      "description": "Install IvorySQL locally with your package manager in minutes"
+    },
+    "containerDeploy": {
+      "title": "Container Deploy",
+      "description": "Run IvorySQL in Docker or Kubernetes with official images"
+    },
+    "onlineTrial": {
+      "description": "Try IvorySQL right in your browser — zero setup required"
+    },
+    "sandboxes": {
+      "description": "Try IvorySQL in a sandbox environment on PGNexus.ai"
+    }
+  },
+  "Features": {
+    "heading": "Why IvorySQL",
+    "description": "IvorySQL combines the power of PostgreSQL with Oracle compatibility, open-source freedom, and enterprise-grade reliability.",
+    "openSource": {
+      "title": "Open Source",
+      "description": "No Vendor Lock-In. Apache 2.0 licensed with full freedom to use, modify, and distribute."
+    },
+    "postgresql": {
+      "title": "Powered by PostgreSQL",
+      "description": "Based on PostgreSQL, with full SQL, rock-solid reliability, and a massive ecosystem."
+    },
+    "oracleCompat": {
+      "title": "Oracle Compatible",
+      "description": "Migrate your Oracle DB to IvorySQL with built-in compatibility and seamless transition."
+    },
+    "customization": {
+      "title": "Customization",
+      "description": "Just download the code and make it as you like. Full source access for any need."
+    },
+    "openatom": {
+      "title": "Backed by OpenAtom Foundation",
+      "description": "Supported by the OpenAtom Foundation, a non-profit organization dedicated to open-source software development and innovation."
+    },
+    "communityDriven": {
+      "title": "Community Driven",
+      "description": "A creative, collaborative community working together to build more possibilities."
+    }
+  },
+  "OpenSourceBanner": {
+    "title": "100% Free & Open Source",
+    "license": "Apache 2.0 License",
+    "description": "IvorySQL is released under the permissive Apache 2.0 License — use it freely for personal, startup, or enterprise workloads.",
+    "descriptionHighlight": "No cost. No paywall. No feature gating.",
+    "joinCommunity": "Join the community",
+    "perks": {
+      "freeForever": {
+        "label": "Free Forever",
+        "detail": "No license fees, no hidden costs"
+      },
+      "apache2": {
+        "label": "Apache 2.0 License",
+        "detail": "Permissive & business-friendly"
+      },
+      "commercialUse": {
+        "label": "Commercial Use",
+        "detail": "Use, modify, and redistribute freely"
+      }
+    }
+  },
+  "UseCases": {
+    "heading": "Application Scenarios",
+    "description": "IvorySQL is designed for diverse enterprise and modern data workloads, from mission-critical systems to AI-powered intelligence.",
+    "enterpriseDb": {
+      "title": "Enterprise Database",
+      "description": "Suitable for ERP systems, transaction platforms, financial systems, and other scenarios requiring high availability and complex business logic."
+    },
+    "lbs": {
+      "title": "LBS Applications",
+      "description": "Supports geospatial queries (e.g. O2O services, game maps) through PostGIS for location-based applications."
+    },
+    "unifiedData": {
+      "title": "Unified Data Platform",
+      "description": "Supports hybrid workloads of OLTP and real-time analytics, meeting enterprise demands for both real-time data services and agile analysis."
+    },
+    "aiEmpowered": {
+      "title": "AI-Empowered Database",
+      "description": "Supports natural language queries (NL2SQL) and AI Agent collaborative reasoning, building a flexible, scalable intelligent database platform."
+    },
+    "dbMigration": {
+      "title": "Database Migration",
+      "description": "Direct migration from Oracle Database to IvorySQL, leveraging built-in Oracle compatibility to minimize refactoring effort."
+    }
+  },
+  "Community": {
+    "heading": "Open Source from Day One",
+    "description": "IvorySQL is built by a global community of developers passionate about making PostgreSQL more accessible and Oracle-compatible.",
+    "stats": {
+      "yearsOfDevelopment": "Years of Development",
+      "githubStars": "GitHub Stars",
+      "openSourceRepos": "Open Source Repos"
+    },
+    "links": {
+      "github": {
+        "name": "GitHub",
+        "description": "Star us on GitHub and contribute to the project"
+      },
+      "atomgit": {
+        "name": "AtomGit",
+        "description": "OpenAtom Foundation platform for IvorySQL"
+      },
+      "gitee": {
+        "name": "Gitee",
+        "description": "Domestic mirror hosted on Gitee"
+      },
+      "discord": {
+        "name": "Discord",
+        "description": "Join our community for discussions and support"
+      },
+      "mailingLists": {
+        "name": "Mailing Lists",
+        "description": "Stay updated with development and user discussions"
+      },
+      "twitter": {
+        "name": "Twitter",
+        "description": "Follow us for news and announcements"
+      }
+    },
+    "contributeOnGithub": "Contribute on GitHub",
+    "contributionGuidelines": "Contribution Guidelines"
+  },
+  "BusinessValue": {
+    "heading": "Built for Real Business Challenges",
+    "description": "From startups to enterprises, IvorySQL powers mission-critical workloads across industries — and solves the pain points database teams face every day.",
+    "industriesLabel": "Trusted across industries & every stage of growth",
+    "industries": {
+      "finance": "Finance",
+      "telecom": "Telecom",
+      "government": "Government",
+      "energy": "Energy",
+      "manufacturing": "Manufacturing",
+      "internet": "Internet"
+    },
+    "scaleTags": {
+      "startupMvp": "Startup MVP",
+      "smbProduction": "SMB Production",
+      "enterpriseCore": "Enterprise Core",
+      "missionCritical": "Mission-Critical",
+      "multiRegion": "Multi-Region",
+      "highConcurrency": "High-Concurrency"
+    },
+    "challengesLabel": "Challenges we solve",
+    "challengeBadge": "Challenge",
+    "solutionBadge": "Solution",
+    "challenges": {
+      "licensing": {
+        "pain": "Commercial database licensing costs keep climbing",
+        "solution": "Apache 2.0 licensed with no per-core fees, no enterprise tiers, and no hidden costs. Run production workloads at any scale — completely free."
+      },
+      "migration": {
+        "pain": "Oracle migration is risky, expensive, and slow",
+        "solution": "Native PL/SQL, packages, cursors, and Oracle-style data types let you lift-and-shift with minimal refactoring — cut migration time and cost dramatically."
+      },
+      "htap": {
+        "pain": "Juggling separate databases for transactions and analytics",
+        "solution": "A unified HTAP engine handles OLTP and real-time analytics in one place — no data pipelines, no sync lag, no duplicated infrastructure."
+      },
+      "compliance": {
+        "pain": "Need domestic OS and CPU compliance for regulated workloads",
+        "solution": "Certified on Kylin, UOS, openEuler and x86_64, ARM64, MIPS, LoongArch — ready for Xinchuang and regulated-industry deployments out of the box."
+      }
+    },
+    "ctaQuestion": "Have a specific use case in mind?",
+    "readCustomerStories": "Read customer stories →"
+  },
+  "Capabilities": {
+    "heading": "The Complete Enterprise Database",
+    "description": "PostgreSQL reliability, Oracle compatibility, a rich ecosystem, and cloud-native deployment — everything your enterprise needs, in one database.",
+    "viewDocumentation": "View Documentation",
+    "pillars": {
+      "pg-kernel": {
+        "label": "PG Kernel",
+        "tagline": "In lockstep with every PostgreSQL release",
+        "description": "IvorySQL closely tracks PostgreSQL kernel development and ships new releases in step with each upstream version. The current release is built on the PostgreSQL 18 kernel, introducing Asynchronous I/O and Skip Scan for significant performance gains.",
+        "points": [
+          "Full SQL compliance & ACID transactions",
+          "Native streaming replication & PITR",
+          "Asynchronous I/O for higher storage throughput",
+          "Skip Scan for faster multi-column index queries"
+        ]
+      },
+      "oracle": {
+        "label": "Oracle Compatible",
+        "tagline": "Run Oracle workloads without rewriting code",
+        "description": "Native PL/SQL procedural syntax with blocks, loops, cursors, packages, and exception handling — migrate from Oracle with minimal changes.",
+        "points": [
+          "Native PL/SQL procedural syntax",
+          "Oracle-style exception handling",
+          "Package spec/body separation",
+          "DUAL table & built-in functions"
+        ]
+      },
+      "ecosystem": {
+        "label": "Rich Ecosystem",
+        "tagline": "Tools, extensions, and domestic OS & CPU certification",
+        "description": "Certified on major domestic platforms and CPU architectures, with a rich extension library including PostGIS, PGroonga, pgAudit, and more.",
+        "points": [
+          "Kylin, Anolis, UOS, openEuler certified",
+          "x86_64, ARM64, MIPS, LoongArch support",
+          "pgBouncer, pg_probackup, Repmgr tools",
+          "PostGIS, PGroonga, pgAudit extensions"
+        ]
+      },
+      "cloud-native": {
+        "label": "Cloud Native",
+        "tagline": "Docker, Kubernetes, and IvorySQL Cloud",
+        "description": "Docker Compose, Podman, Swarm, and Kubernetes Operator support with full lifecycle management — deploy anywhere.",
+        "points": [
+          "Docker Compose & Podman",
+          "Swarm & Kubernetes Operator",
+          "IvorySQL Cloud lifecycle management",
+          "Ecosystem tool integration"
+        ]
+      }
+    }
+  },
+  "BlogPage": {
+    "metaTitle": "Blog",
+    "metaDescription": "Get all your IvorySQL news, technical deep dives, and community updates.",
+    "heading": "IvorySQL Blog",
+    "subheading": "Technical deep dives, product updates, and community stories from the IvorySQL team.",
+    "readArticle": "Read article"
+  },
+  "NewsPage": {
+    "metaTitle": "News & Updates",
+    "metaDescription": "Get the latest news, product releases, and community updates from IvorySQL.",
+    "heading": "News & Updates",
+    "subheading": "Get the latest news, product releases, and community updates from IvorySQL."
+  },
+  "EventsPage": {
+    "metaTitle": "Events",
+    "metaDescription": "Conferences, meetups, webinars, and community programs from the IvorySQL team.",
+    "heading": "Community Events",
+    "subheading": "Conferences, meetups, webinars, and community programs from the IvorySQL team.",
+    "currentlyHappening": "Currently Happening",
+    "nextUpcomingEvent": "Next Upcoming Event",
+    "viewDetails": "View details"
+  },
+  "EventsUI": {
+    "backToEvents": "All Events",
+    "previousEvent": "Previous event",
+    "nextEvent": "Next event",
+    "relatedEvents": "Related Events",
+    "joinCommunity": {
+      "title": "Join the IvorySQL Community",
+      "description": "Get involved in our open-source community. Contribute code, attend events, or share your experience."
+    },
+    "searchPlaceholder": "Search events...",
+    "eventType": "Event Type",
+    "all": "All",
+    "showingCount": "Showing {shown} of {total} events",
+    "noResults": "No events match your search.",
+    "statusEnded": "Ended",
+    "statusUpcoming": "Upcoming",
+    "statusOngoing": "Ongoing"
+  },
+  "NewsUI": {
+    "all": "All",
+    "noResults": "No news in this category yet.",
+    "readMore": "Read more",
+    "articleCount": "{count, plural, one {# article} other {# articles}}",
+    "backToNews": "Back to News"
+  },
+  "BlogUI": {
+    "all": "All",
+    "searchPlaceholder": "Search blog...",
+    "noResultsSearch": "No posts match your search.",
+    "noResultsCategory": "No posts in this category yet."
+  },
+  "BlogPostUI": {
+    "backToBlog": "Back to Blog",
+    "shareThisArticle": "Share this article",
+    "previousPost": "Previous post",
+    "nextPost": "Next post",
+    "tags": "Tags",
+    "relatedPosts": "Related Posts",
+    "tryIvorySQL": "Try IvorySQL",
+    "ctaDescription": "Get started with IvorySQL today. Read the docs or try our online demo.",
+    "readDocs": "Read Docs"
+  },
+  "RoadmapPage": {
+    "metaTitle": "Roadmap",
+    "metaDescription": "Track IvorySQL development progress, release schedules, and upcoming features.",
+    "backToHome": "Back to Home",
+    "badge": "Developers",
+    "heading": "Welcome to Developers",
+    "intro": "IvorySQL is a noncommercial, all volunteer, free software project, and as such there is no formal list of feature requirements required for development. We enjoy allowing developers to explore the topics of their choosing, though we also ensure that all new features committed to IvorySQL are thoroughly vetted by our community of contributors and committers.",
+    "minorReleasesHeading": "Minor Releases",
+    "minorReleasesDescription": "The IvorySQL project aims to follow a predefined schedule, releasing at least one minor version per quarter. If additional releases are needed due to critical bug fixes or security issues, more releases will be made between these dates, so this list should be considered a minimum. IvorySQL closely follows PostgreSQL's release schedule, ensuring that a new minor version with the latest kernel updates will be released every quarter.",
+    "minorReleasesScheduleIntro": "The version release schedule for this year is as follows:",
+    "releases": [
+      {
+        "quarter": "1st Quarter",
+        "version": "v5.3",
+        "kernel": "PG Kernel 18.3"
+      },
+      {
+        "quarter": "2nd Quarter",
+        "version": "v5.4",
+        "kernel": "PG Kernel 18.4"
+      },
+      {
+        "quarter": "3rd Quarter",
+        "version": "v5.5",
+        "kernel": "PG Kernel 18.5"
+      },
+      {
+        "quarter": "4th Quarter",
+        "version": "v5.6",
+        "kernel": "PG Kernel 18.6"
+      }
+    ],
+    "releaseLabel": "Release {version}",
+    "nextMajorHeading": "Next Major Release",
+    "nextMajorDescription": "The next major version of IvorySQL is planned as v6.0, scheduled for release in Q4 2026. The current IvorySQL v6.0 development progress can be tracked on the GitHub Project page.",
+    "v6Schedule": "Scheduled for release in Q4 2026",
+    "githubProjectPage": "GitHub Project Page",
+    "previousFeaturesHeading": "Previously Implemented Compatibility Features",
+    "previousFeaturesDescription": "For Oracle-compatible features implemented in previous versions, please refer to the Oracle Compatibility List in IvorySQL Documentation Center.",
+    "oracleCompatUrl": "https://docs.ivorysql.org/en/ivorysql-doc/master/oracle_compatibility/compat_case_conversion",
+    "oracleCompatLabel": "Oracle Compatibility List"
+  },
+  "StoriesPage": {
+    "metaTitle": "Customer Stories",
+    "metaDescription": "Real-world IvorySQL customer case studies from public sector, financial services, and beyond.",
+    "heading": "Customer Stories",
+    "subheading": "Real-world IvorySQL customer case studies from public sector, financial services, and beyond."
+  },
+  "StoriesUI": {
+    "all": "All",
+    "noResults": "No case studies in this industry yet.",
+    "readMore": "Read the full story",
+    "caseCount": "{count} case studies",
+    "backToStories": "Back to Customer Stories"
+  },
+  "EcosystemPage": {
+    "metaTitle": "Ecosystem & Compatibility",
+    "metaDescription": "IvorySQL ecosystem: 55+ tools spanning connectivity, high availability, drivers, monitoring, and data integration — plus domestic CPU/OS compatibility certificates.",
+    "ogTitle": "IvorySQL Ecosystem & Compatibility",
+    "ogDescription": "55+ tools for every layer of your stack, and certified compatible with major domestic CPUs (Kunpeng, Loongson, Phytium…) and operating systems (Kylin, UOS, openEuler…).",
+    "heading": "Ecosystem & Tools",
+    "subheading": "The community provides a rich ecosystem of tools, including client tools, high availability tools, cloud-native tools, monitoring and operations tools, backup and recovery tools, and geospatial tools.",
+    "domesticCompatTitle": "Domestic Compatibility & Certification",
+    "domesticCompatDescription": "Certified compatible with major domestic CPUs and operating systems for secure, controllable deployments.",
+    "browseDocsLink": "Browse the full ecosystem docs",
+    "toolMeta": {
+      "pgpool-II": {
+        "desc": "Middleware proxy for PostgreSQL: connection pooling, load balancing, and automatic failover."
+      },
+      "pgBouncer": {
+        "desc": "Ultra-lightweight connection pooler for PostgreSQL, minimizing connection overhead."
+      },
+      "odyssey": {
+        "desc": "Advanced multi-threaded PostgreSQL connection pooler by Yandex, designed for high concurrency."
+      },
+      "HAProxy": {
+        "desc": "High-performance TCP/HTTP load balancer widely used for PostgreSQL read/write splitting."
+      },
+      "ShardingSphere": {
+        "desc": "Apache distributed database ecosystem providing sharding, scaling, and encryption for PostgreSQL."
+      },
+      "Citus": {
+        "desc": "Distributed PostgreSQL extension that horizontally scales your database across multiple nodes."
+      },
+      "vip-manager": {
+        "desc": "Manages virtual IP addresses for PostgreSQL HA clusters, ensuring seamless failover."
+      },
+      "MyBatis": {
+        "desc": "Java SQL mapping framework that eliminates boilerplate JDBC code with flexible SQL control."
+      },
+      "Hibernate": {
+        "desc": "Powerful Java ORM framework with full PostgreSQL and JPQL support."
+      },
+      "libpq": {
+        "desc": "Official C client library for PostgreSQL, the foundation for most language drivers."
+      },
+      "JDBC": {
+        "desc": "Official Java Database Connectivity driver for PostgreSQL (pgjdbc)."
+      },
+      "ODBC": {
+        "desc": "psqlODBC — official PostgreSQL ODBC driver for Windows and Linux applications."
+      },
+      "psycopg2": {
+        "desc": "Most popular PostgreSQL adapter for Python, featuring full async support."
+      },
+      "ADO_NET": {
+        "desc": "Npgsql — high-performance .NET data provider for PostgreSQL with EF Core support."
+      },
+      "lib/pq": {
+        "desc": "Pure Go PostgreSQL driver (legacy), compatible with database/sql standard interface."
+      },
+      "pgx": {
+        "desc": "High-performance PostgreSQL driver for Go with low-level protocol access."
+      },
+      "Ruby": {
+        "desc": "pg gem — the official Ruby interface to PostgreSQL."
+      },
+      "Rust": {
+        "desc": "rust-postgres — native PostgreSQL driver for Rust, with tokio async support."
+      },
+      "DBeaver": {
+        "desc": "Universal multi-database GUI management tool with ERD, SQL editor, and data export."
+      },
+      "pgAdmin": {
+        "desc": "Official open-source PostgreSQL administration and management web application."
+      },
+      "Navicat": {
+        "desc": "Professional GUI tool for PostgreSQL with visual query builder and data modeling."
+      },
+      "Navicat Premium": {
+        "desc": "Multi-connection GUI tool supporting PostgreSQL, MySQL, Oracle, and more simultaneously."
+      },
+      "pg_rman": {
+        "desc": "Online backup and recovery manager for PostgreSQL with PITR support."
+      },
+      "WAL-G": {
+        "desc": "Fast cloud-native backup tool using cloud storage (S3, GCS, Azure) with delta compression."
+      },
+      "pg_probackup": {
+        "desc": "Backup and recovery solution for PostgreSQL with parallel processing and incremental backups."
+      },
+      "pgBackRest": {
+        "desc": "Reliable, feature-rich backup solution with parallel restore and cloud storage support."
+      },
+      "Patroni": {
+        "desc": "HA template for PostgreSQL using DCS (etcd/Consul/ZooKeeper) for automatic failover."
+      },
+      "repmgr": {
+        "desc": "Replication manager for PostgreSQL: manages streaming replication and switchover."
+      },
+      "Pacemaker Corosync": {
+        "desc": "Open-source cluster resource manager providing HA for PostgreSQL and other services."
+      },
+      "StackGres": {
+        "desc": "Production-grade PostgreSQL on Kubernetes with automated ops, monitoring, and backups."
+      },
+      "Prometheus": {
+        "desc": "Open-source monitoring and alerting toolkit; pairs with pg_exporter for PostgreSQL metrics."
+      },
+      "Alertmanager": {
+        "desc": "Handles alerts from Prometheus, routing notifications to email, Slack, PagerDuty, etc."
+      },
+      "pgMonitor": {
+        "desc": "Pre-configured PostgreSQL monitoring stack by Crunchy Data using Prometheus and Grafana."
+      },
+      "Grafana": {
+        "desc": "Observability and data visualization platform for dashboards and alerting."
+      },
+      "PoWA": {
+        "desc": "PostgreSQL Workload Analyzer — query performance insights with historical data."
+      },
+      "Debezium": {
+        "desc": "CDC platform for capturing row-level database change events in real time."
+      },
+      "pglogical": {
+        "desc": "Logical replication extension for PostgreSQL supporting selective table replication."
+      },
+      "mysql_fdw": {
+        "desc": "PostgreSQL Foreign Data Wrapper for accessing MySQL tables directly from PostgreSQL."
+      },
+      "oracle_fdw": {
+        "desc": "PostgreSQL Foreign Data Wrapper for querying Oracle databases transparently."
+      },
+      "Ora2Pg": {
+        "desc": "Free open-source tool for migrating Oracle database schemas and data to PostgreSQL."
+      },
+      "pg_bulkload": {
+        "desc": "High-speed data loading tool for PostgreSQL, bypassing WAL for maximum throughput."
+      },
+      "ddlx": {
+        "desc": "PostgreSQL extension to extract clean, executable DDL scripts from database objects."
+      },
+      "Databene": {
+        "desc": "Database testing and synthetic data generation framework for regression and performance tests."
+      },
+      "TimescaleDB": {
+        "desc": "Time-series database built on PostgreSQL with automatic partitioning and compression."
+      },
+      "DocumentDB": {
+        "desc": "Open-source document database compatible with MongoDB wire protocol, built on PostgreSQL."
+      },
+      "PostgreSQL AGE": {
+        "desc": "Apache AGE — graph database extension for PostgreSQL supporting openCypher queries."
+      },
+      "FerretDB": {
+        "desc": "MongoDB-compatible backend using PostgreSQL for storage, enabling Mongo drivers to work."
+      },
+      "PostGIS": {
+        "desc": "Adds spatial and geographic object support to PostgreSQL, the gold standard for GIS."
+      },
+      "pgRouting": {
+        "desc": "Geospatial routing extension extending PostGIS for path-finding and network analysis."
+      },
+      "pgvector": {
+        "desc": "Open-source vector similarity search for PostgreSQL, ideal for AI embeddings and RAG."
+      },
+      "MADlib": {
+        "desc": "Apache MADlib — in-database machine learning library for scalable analytics."
+      },
+      "postgres-wasm": {
+        "desc": "PostgreSQL compiled to WebAssembly — run a full database in your browser, zero install."
+      },
+      "pg_cron": {
+        "desc": "Cron-based job scheduler for PostgreSQL, running SQL commands on a schedule inside the DB."
+      },
+      "pgAgent": {
+        "desc": "Job scheduling agent for PostgreSQL integrated with pgAdmin for scheduled tasks."
+      },
+      "Docker Compose": {
+        "desc": "Define and run multi-container applications; official IvorySQL Docker images available."
+      },
+      "Podman": {
+        "desc": "Daemonless, rootless container engine fully compatible with Docker images and compose files."
+      },
+      "Docker Swarm": {
+        "desc": "Native Docker clustering for deploying IvorySQL in a replicated, highly available setup."
+      }
+    },
+    "categories": {
+      "connectivity": {
+        "title": "Connectivity & Pooling",
+        "desc": "Connection pooling, load balancing & horizontal sharding"
+      },
+      "haBackup": {
+        "title": "High Availability & Backup",
+        "desc": "Cluster management, automatic failover & point-in-time recovery"
+      },
+      "devTools": {
+        "title": "Developer Tools & Drivers",
+        "desc": "GUI clients, ORM frameworks & multi-language database drivers"
+      },
+      "monitoring": {
+        "title": "Monitoring & Operations",
+        "desc": "Metrics collection, dashboards & query performance analysis"
+      },
+      "dataIntegration": {
+        "title": "Data Integration & Migration",
+        "desc": "CDC, heterogeneous access & Oracle-to-PostgreSQL migration"
+      },
+      "aiGeo": {
+        "title": "AI, Geo & Multi-Model",
+        "desc": "Vector search, time-series, geospatial & graph extensions"
+      }
+    },
+    "platformFooters": [
+      "Operating System: Windows / CentOS / RHEL / Ubuntu / openEuler / Kylin OS / UnionTech OS",
+      "CPU Architecture: x86 / Kunpeng / LoongArch / Zhaoxin / Sunway / Hygon / Phytium / MIPS / RISC-V"
+    ],
+    "legendLabels": {
+      "supported": "Supported",
+      "progress": "Support In Progress",
+      "planned": "Support Planned",
+      "proprietary": "Proprietary Software"
+    }
+  },
+  "PartnersPage": {
+    "metaTitle": "Partners",
+    "metaDescription": "Explore the IvorySQL partner ecosystem — technology partners, community collaborators, commercial solutions, and academic programs.",
+    "ogTitle": "IvorySQL Partners",
+    "heading": "Partners",
+    "subheading": "Explore our ecosystem of technology partners, community collaborators, and commercial solutions providers."
+  },
+  "PartnersUI": {
+    "certificatesTitle": "Compatibility Certificates",
+    "certificatesDescription": "Verified compatibility with leading platforms and operating systems.",
+    "benefitsTitle": "Partner Benefits",
+    "ctaTitle": "Ready to work together?",
+    "ctaDescription": "Applications are welcome. Join the global IvorySQL partner network and build deep connections with the community.",
+    "ctaButton": "Apply to become a partner",
+    "categories": {
+      "tech": {
+        "label": "Technology & Ecosystem",
+        "description": "Deep compatibility with mainstream infrastructure to build a stable and high-performance technical ecosystem."
+      },
+      "community": {
+        "label": "Community & Marketing",
+        "description": "Connecting the developer ecosystem, promoting open-source technology and practical case studies."
+      },
+      "solutions": {
+        "label": "Solutions & Commercial",
+        "description": "Partnering with leading system integrators to provide enterprise-ready capabilities."
+      },
+      "academic": {
+        "label": "Academic & Research",
+        "description": "Deepening the fusion of industry, education, and research to empower technical talent."
+      }
+    },
+    "benefits": [
+      {
+        "title": "Expert Technical Support",
+        "description": "Direct technical guidance from the IvorySQL core development team, priority access to product roadmaps and feature previews."
+      },
+      {
+        "title": "Joint Brand Promotion",
+        "description": "Partner logos displayed on the official website. Shared traffic through joint whitepapers, technical cases, and meetups."
+      },
+      {
+        "title": "Ecosystem Growth",
+        "description": "Join the global IvorySQL partner network to build deep connections and create joint solutions."
+      }
+    ],
+    "certificateAlt": "Compatibility certificate {n}"
+  },
+  "ReleasesPage": {
+    "metaTitle": "Releases",
+    "metaDescription": "Production-ready IvorySQL releases. Browse current stable versions and full release history, all backed by the latest PostgreSQL.",
+    "ogTitle": "IvorySQL Releases",
+    "heading": "Releases",
+    "subheading": "Production-ready open-source releases, always backed by the latest PostgreSQL."
+  },
+  "ReleasesUI": {
+    "tabCurrent": "Current Versions",
+    "tabHistorical": "Historical Versions",
+    "latestStable": "Latest Stable",
+    "released": "Released",
+    "basedOn": "Based on",
+    "colVersion": "Version",
+    "colReleased": "Released",
+    "showAll": "Show all {count} versions",
+    "showLess": "Show less",
+    "contactPrompt": "Want to provide IvorySQL packages?",
+    "contactLink": "Contact support@ivorysql.org"
+  },
+  "VulnerabilityManagementPage": {
+    "metaTitle": "Vulnerability Management",
+    "metaDescription": "IvorySQL vulnerability reporting process, severity assessment, and disclosure policy.",
+    "backToHome": "Back to Home",
+    "badge": "Security",
+    "heading": "Vulnerability Management",
+    "subheading": "How the IvorySQL community handles security vulnerabilities - from reporting to disclosure.",
+    "response": {
+      "title": "Vulnerability Response",
+      "paragraph1": "The IvorySQL community places a high priority on the security of its community edition. The IvorySQL Security Special Interest Group (SIG Security) is responsible for receiving, investigating, and disclosing security vulnerabilities related to the IvorySQL community. We encourage vulnerability researchers and industry organizations to proactively report suspected security vulnerabilities in IvorySQL to the SIG Security team. We aim to respond promptly, analyze, and resolve reported security issues or vulnerabilities.",
+      "paragraph2": "As IvorySQL is based on PostgreSQL, vulnerabilities discovered and fixed in PostgreSQL also apply to IvorySQL. Our development team continuously monitors PostgreSQL community security information and promptly integrates PostgreSQL vulnerability patches into IvorySQL.",
+      "linkLabel": "PostgreSQL Community Security"
+    },
+    "supportedVersions": {
+      "title": "Supported Versions",
+      "paragraph": "The vulnerability response process primarily supports the latest release of the IvorySQL community edition and its branch versions."
+    },
+    "process": {
+      "title": "Vulnerability Handling Process",
+      "paragraph": "Each security vulnerability is assigned a designated person for tracking and handling. This coordinator, a member of the IvorySQL SIG Security team, is responsible for overseeing the vulnerability remediation and disclosure. The end-to-end vulnerability handling process is outlined in the diagram below.",
+      "diagramAlt": "Vulnerability handling process diagram",
+      "summary": "In this document, we focus on three key aspects of the process: vulnerability reporting, vulnerability assessment, and vulnerability disclosure."
+    },
+    "reporting": {
+      "title": "Vulnerability Reporting",
+      "paragraph": "You can report potential security vulnerabilities in IvorySQL products by emailing the IvorySQL SIG Security team."
+    },
+    "requiredInfo": {
+      "title": "Required Information for Reporting",
+      "paragraph": "To facilitate rapid confirmation and verification of suspected vulnerabilities, please include the following information in your vulnerability report email:",
+      "items": {
+        "basicInfo": {
+          "title": "Basic Information",
+          "desc": "Affected module, conditions triggering the vulnerability, and impact if successfully exploited."
+        },
+        "technicalDetails": {
+          "title": "Technical Details",
+          "desc": "System configuration, identification methods, exploit description, PoC, and steps to reproduce."
+        },
+        "suggestedRemediation": {
+          "title": "Suggested Remediation",
+          "desc": "Recommendations for fixing the vulnerability."
+        },
+        "reporterDetails": {
+          "title": "Reporter's Details",
+          "desc": "Organization and contact information of the reporter."
+        },
+        "disclosurePlan": {
+          "title": "Disclosure Plan",
+          "desc": "Any planned disclosure timeline or intentions by the reporter."
+        }
+      }
+    },
+    "responseTime": {
+      "title": "Email Response Time",
+      "paragraph": "We will respond to suspected security vulnerabilities reported via email within 5 days and provide feedback on the progress of vulnerability handling to the reporter."
+    },
+    "severity": {
+      "title": "Vulnerability Severity Assessment",
+      "paragraph": "We assess vulnerability severity using the Common Vulnerability Scoring System (CVSS) standard:",
+      "levels": {
+        "critical": "Critical",
+        "high": "High",
+        "medium": "Medium",
+        "low": "Low",
+        "none": "None"
+      }
+    },
+    "disclosure": {
+      "title": "Vulnerability Disclosure",
+      "paragraph": "To protect IvorySQL users, the community strictly limits vulnerability information during investigation and remediation. Information is shared only with personnel directly involved in handling the vulnerability. We do not publicly disclose, discuss, or confirm security issues until a fix is released. Once fixed, an announcement will be published via the securityannounce@ivorysql.org mailing list."
+    }
+  },
+  "DownloadPage": {
+    "metaTitle": "Downloads",
+    "metaDescription": "Download IvorySQL packages, client drivers, and tools to get started with Oracle-compatible PostgreSQL.",
+    "heading": "Downloads",
+    "subheading": "Download IvorySQL packages, client drivers, and tools to get started with Oracle-compatible PostgreSQL."
+  },
+  "DownloadUI": {
+    "database": {
+      "title": "IvorySQL Database",
+      "subtitle": "Server packages and release assets",
+      "packageName": "IvorySQL Package",
+      "latestStable": "Latest Stable",
+      "description": "Latest server packages, source tarballs, and release assets on GitHub."
+    },
+    "drivers": {
+      "title": "IvorySQL Drivers",
+      "subtitle": "Client drivers for application connectivity"
+    },
+    "tools": {
+      "title": "Related Tools",
+      "subtitle": "Migration and management utilities"
+    },
+    "table": {
+      "packageType": "Package Type",
+      "size": "Size",
+      "integrityCheck": "Integrity Check",
+      "download": "Download"
+    },
+    "copyChecksum": "Copy checksum",
+    "contact": {
+      "needHelp": "Need help or have questions?"
+    }
+  },
+  "ContributorsPage": {
+    "metaTitle": "Contributors Wall",
+    "metaDescription": "A wall highlighting the people who contribute to IvorySQL.",
+    "backToHome": "Back to Home",
+    "badge": "Community",
+    "heading": "IvorySQL Contributors Wall",
+    "description": "This page highlights contributors to IvorySQL. They help move the project forward by submitting code, opening issues, fixing bugs, improving documentation, participating in testing, and growing the community.",
+    "statContributors": "{count} contributors",
+    "statYearsIncluded": "{years} included",
+    "statCategory": "Category: Contributor",
+    "filterAll": "All Contributors",
+    "searchPlaceholder": "Search by name or GitHub handle",
+    "gridHeading": "Community Contributors",
+    "gridCount": "{count} contributors shown",
+    "noResults": "No contributors matched the current filter.",
+    "ctaWant": "Want to appear here? Start by joining the IvorySQL contribution flow.",
+    "ctaCertificate": "Contributor certificates are available in the IvorySQL community repository.",
+    "ctaCertificateLink": "View or claim your contributor certificate",
+    "ctaButton": "View Contribution Guidelines"
+  },
+  "ExpertCommitteePage": {
+    "metaTitle": "Expert Advisory Committee",
+    "metaDescription": "Meet the experts guiding IvorySQL technology and community development.",
+    "backToHome": "Back to Home",
+    "eyebrow": "Community Leadership",
+    "heroTitle": "Expert Advisory Committee",
+    "heroDescription": "Bringing together experienced database specialists and open-source leaders from around the world to provide long-term guidance for IvorySQL technology, ecosystem, and community development.",
+    "statExperts": "{count} experts",
+    "statGlobal": "Global perspective",
+    "statUnordered": "No ranking implied",
+    "sectionTitle": "Committee Members",
+    "orderNote": "Experts are listed alphabetically by English name, with no ranking implied.",
+    "readBio": "Read bio",
+    "hideBio": "Hide bio",
+    "joinTitle": "Join the IvorySQL Expert Advisory Committee",
+    "joinDescription": "We welcome more database experts to help advance the open-source database ecosystem with us.",
+    "joinAction": "Contact us by email"
+  },
+  "ContributionGuidelinesPage": {
+    "metaTitle": "Contribution Guidelines",
+    "metaDescription": "How to contribute to IvorySQL - from code patches to documentation, testing, and community participation.",
+    "ogTitle": "IvorySQL Contribution Guidelines",
+    "backToHome": "Back to Home",
+    "badge": "Get Involved",
+    "heroTitle": "IvorySQL Contribution Guidelines",
+    "heroDescription": "IvorySQL grows through contributions from <strong>developers, testers, documentation writers, translators, community advocates, and users around the world</strong>. This page summarizes the main ways to participate in the community and the current incentive policy. For step-by-step contribution instructions, please refer to the <guide>Contribution Guide on the IvorySQL documentation site</guide>.",
+    "guideUrl": "https://docs.ivorysql.org/en/ivorysql-doc/master/contribution/contribution_guide",
+    "codeOfConductUrl": "https://github.com/IvorySQL/IvorySQL/blob/master/CODE_OF_CONDUCT.md",
+    "waysToContributeHeading": "Ways to Contribute",
+    "waysToContributeIntro": "The IvorySQL community believes that <strong>open source should be approachable and that no contribution is too small</strong>. You can participate in a way that matches your background and interests:",
+    "waysToContribute": [
+      {
+        "title": "Code Contributions",
+        "desc": "Kernel development, feature iteration, bug fixes, plugin development, ecosystem tool adaptation, regression tests, and code review."
+      },
+      {
+        "title": "Non-code Contributions",
+        "desc": "Issue reports, documentation improvements, technical translation, community Q&A, online or offline talks, case studies, migration experience sharing, and community promotion."
+      }
+    ],
+    "waysToContributeOutro": "If you are not ready to submit code yet, you can still make a meaningful contribution by <strong>reproducing issues, clarifying requirements, improving docs, or helping other users in community discussions</strong>.",
+    "incentivesHeading": "Incentive Policy",
+    "incentivesIntro": "To encourage long-term participation, the IvorySQL community continues to improve how contributors are recognized and supported:",
+    "incentives": [
+      {
+        "title": "Recognition",
+        "desc": "Contributors may receive community digital certificates and be featured on the official contributor wall to record their open-source footprint."
+      },
+      {
+        "title": "Mentorship",
+        "desc": "The \"Lighthouse\" mentoring model helps contributors grow with technical guidance, one-on-one support, and code review feedback from experienced community members."
+      },
+      {
+        "title": "Community Opportunities",
+        "desc": "Active contributors may receive speaking, sharing, or participation opportunities at community events such as HOW and other technical activities."
+      },
+      {
+        "title": "Annual Incentives",
+        "desc": "The community may select outstanding contributors for merchandise, public recognition, ecosystem exposure, and other collaboration opportunities."
+      }
+    ],
+    "incentivesOutro": "Specific arrangements may evolve with community programs, but <strong>sustained and valuable contributions are always taken seriously and recognized</strong>.",
+    "communityProcessHeading": "Community Collaboration Process",
+    "communityProcessIntro": "The IvorySQL community employs a closed-loop open-source collaboration process, ensuring that every step—from issue submission to version release—receives closed feedback and continuous improvement. This process encourages positive interaction between users and developers, allowing community development to evolve around actual needs.",
+    "communityProcessStepsIntro": "The entire closed-loop collaboration process is as follows:",
+    "processSteps": [
+      {
+        "emoji": "🐛",
+        "title": "Submit Issue",
+        "desc": "Users or developers submit bugs, feature suggestions, or usage feedback on the GitHub Issues page."
+      },
+      {
+        "emoji": "💬",
+        "title": "Discussion",
+        "desc": "Maintainers and community members discuss the issue, confirm its nature and priority, and add it to the ToDo List."
+      },
+      {
+        "emoji": "🛠️",
+        "title": "Development Branch (Fork & Dev)",
+        "desc": "Developers claim the Issue, fork the repository, develop and test locally, and prepare to submit code."
+      },
+      {
+        "emoji": "🚀",
+        "title": "Submit Pull Request (PR)",
+        "desc": "Push the development branch to the forked repository and initiate a merge request to the upstream repository."
+      },
+      {
+        "emoji": "🧐",
+        "title": "Code Review",
+        "desc": "Maintainers or core developers review the PR, provide modification suggestions, and ensure quality."
+      },
+      {
+        "emoji": "🔀",
+        "title": "Merge to Main Branch",
+        "desc": "After approval, the PR is merged into the main branch, and the corresponding Issue is closed."
+      },
+      {
+        "emoji": "📦",
+        "title": "Release",
+        "desc": "The project regularly releases new versions (minor versions quarterly, major versions annually), including the latest fixes and features."
+      },
+      {
+        "emoji": "🧪",
+        "title": "User Testing",
+        "desc": "Users upgrade to the new version, provide feedback on new issues, and new Issues are generated, forming a complete feedback loop."
+      }
+    ],
+    "codeOfConductNotice": "Please read and abide by our <coc>IvorySQL Community Code of Conduct</coc>.",
+    "gettingStartedHeading": "Getting Started",
+    "gettingStartedStep1": "Register a GitHub account and familiarize yourself with basic Git workflows",
+    "gettingStartedStep2Heading": "Sign the Contributor License Agreement (CLA)",
+    "claIndividual": "Individual contributor CLA",
+    "claCorporate": "Corporate contributor CLA",
+    "claAtomGitNote": "Note: If you contribute via AtomGit, the CLA signing can be completed automatically.",
+    "gettingStartedStep3": "Read the detailed <guide>Contribution Guide</guide> to understand:",
+    "gettingStartedStep3Items": [
+      "Community collaboration process",
+      "Code contribution guidelines",
+      "Ecosystem component adaptation workflow",
+      "Testing and documentation requirements"
+    ],
+    "gettingStartedStep4": "Choose an area of interest and find an Issue to work on",
+    "gettingStartedStep5": "Submit your first PR and join the community!",
+    "needHelpHeading": "Need Help?",
+    "needHelpItems": [
+      {
+        "label": "Mailing list",
+        "value": "https://lists.ivorysql.org"
+      },
+      {
+        "label": "GitHub Discussions",
+        "value": "https://github.com/IvorySQL/IvorySQL/discussions"
+      },
+      {
+        "label": "Community groups",
+        "value": "WeChat, Discord, and other chat groups"
+      }
+    ],
+    "needHelpFooter": "If you are interested in code contributions but are not sure where to start, or if this is your first time contributing to IvorySQL, the <guide>detailed Contribution Guide</guide> will help you find a clear entry point and lower the barrier to participation."
+  },
+  "HomeMeta": {
+    "metaTitle": "IvorySQL - Open Source Oracle Compatible PostgreSQL",
+    "metaDescription": "Open Source Oracle compatible PostgreSQL. A creative and powerful database based on PostgreSQL with Oracle compatibility, built for reliability and performance."
+  }
+}

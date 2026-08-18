@@ -1,0 +1,60 @@
+---
+title: "IvorySQL 4.5 发布"
+date: "2025-06-04"
+category: "product"
+categoryLabel: "产品"
+description: "IvorySQL 4.5 全面支持 PostgreSQL 17.5，新增在线体验等多项功能并修复已知问题。"
+image: "/images/news/ivorysql-v4-5-released.png"
+slug: "ivorysql-v4-5-released"
+---
+
+<p>2025 年 6 月 4 日，IvorySQL 4.5 正式发布！</p>
+<p>新版本全面支持 PostgreSQL 17.5，新增多项新功能，并修复了已知问题。</p>
+
+<h2 id="enhancements">增强功能</h2>
+<p>PostgreSQL 17.5 增强功能：</p>
+<ul>
+  <li>修复检查声明为 GB18030 编码的无效字符串时单字节缓冲区过读问题</li>
+  <li>正确处理分区表上的自引用外键</li>
+  <li>避免 <code>brin_bloom_union()</code> 合并压缩 BRIN 摘要时发生数据丢失</li>
+  <li>正确解析嵌套在 WITH 子句中的 <code>INSERT/UPDATE/DELETE/MERGE</code> 命令所引用的外部 CTE 名称</li>
+  <li>修正 <code>ALTER TABLE ADD COLUMN</code> 对含默认值的域类型处理逻辑</li>
+</ul>
+<p>更多细节请参阅 <a href="https://www.postgresql.org/docs/release/17.5/" target="_blank" title="PostgreSQL 发布说明">PostgreSQL 发布说明</a>。</p>
+
+<h2 id="new-features">新增特性</h2>
+<ul>
+  <li>升级至 PG 17.5 内核</li>
+  <li><strong>全平台 MIPS 打包支持：</strong>除了支持已有 ARM 和 X86 架构，新增 MIPS 架构的多平台介质包，兼容国内外主流操作系统（含麒麟、统信 UOS、凝思 NSAR OS 等）</li>
+  <li><strong>IvorySQL 在线体验：</strong>提供基于 Web 的即时体验环境，用户可通过浏览器直接操作 IvorySQL 4.5 数据库</li>
+  <li>新增行为准则</li>
+  <li>更新社区贡献指南</li>
+  <li>通过 PR 实现文档自动构建与官网更新</li>
+  <li>增强贡献者工作流：支持 <code>/assign</code> 命令自助分配任务</li>
+  <li>IvorySQL Operator V4 适配 IvorySQL 4.5，升级系统组件与数据库扩展版本</li>
+</ul>
+<p>IvorySQL 在线体验这一新增功能，您可以阅读文章 <a href="https://mp.weixin.qq.com/s/BdZ0nWuFWFx8gnpbBVV42g" target="_blank">IvorySQL-WASM：免安装的数据库探索之旅</a> 了解详情。</p>
+
+<h2 id="fixed-issues">修复已知问题</h2>
+<ul>
+  <li>修复 <code>check_compatible_mode 与 assign_compatible_mode</code> 枚举值错误问题</li>
+  <li>修复文档中 GUC 框架测试结果描述问题</li>
+  <li>修复文档中 Oracle 兼容性参数描述问题</li>
+  <li>修复文档中 README 路径问题</li>
+  <li>修复兼容模式变更时 <code>search_path</code> 未更新问题</li>
+  <li>修复 <code>ModifyTableContext</code> 与 <code>UpdateContext</code> 兼容性问题</li>
+  <li>修复 <code>initdb -C identifier_case_switch</code> 不生效问题</li>
+</ul>
+<p>详情参考：<a href="https://github.com/IvorySQL/IvorySQL/releases/tag/IvorySQL_4.5" target="_blank" title="IvorySQL 4.5 发布说明">IvorySQL 4.5 发布说明</a>。</p>
+
+<h2 id="source-code">源码</h2>
+<p>IvorySQL 主要包含 2 个代码仓库:</p>
+<ul>
+  <li>IvorySQL 数据库源码：<a href="https://github.com/IvorySQL/IvorySQL" target="_blank">https://github.com/IvorySQL/IvorySQL</a></li>
+  <li>IvorySQL 官方网站：<a href="https://github.com/IvorySQL/Ivory-www" target="_blank">https://github.com/IvorySQL/Ivory-www</a></li>
+</ul>
+
+<h2 id="contributors">感谢贡献者</h2>
+<p>以下人员（按字母顺序排列）作为补丁作者、提交者、审阅者、测试人员或问题报告者对本版本做出了贡献：</p>
+
+Cary Huang, Denis Lussier, Fawei Zhao, Flyingbeecd, Ge Sui, Grant Zhou, Hulin Ji, Hope Gao, Lily Wang, Renli Zou, Shawn Yan, Shihua Yang, Shiji Niu, Shoubo Wang, Shuntian Jiao, Xiangyu Liang, Xinjie Lv, Zheng Tao, Zhenhao Pan, Zhuoyan Shi.

@@ -1,0 +1,49 @@
+---
+title: "PostgreSQL 数据库技术峰会北京站活动回顾｜IvorySQL 双解析器架构下的兼容性创新实践"
+date: '2025-04-22'
+location: "北京"
+eventType: "Summit"
+type: Offline
+image: /images/events/event-202503.png
+description: >-
+  IvorySQL 研发工程师矫顺田在 PostgreSQL 数据库技术峰会北京站分享了双解析器架构下的兼容性创新实践。
+slug: "event-202503"
+---
+
+2025 年 4 月 22 日，由中国开源软件推进联盟 PG 分会主办，PostgreSQL ACE/PG 分会北京&天津用户组负责人刘华阳联合发起的"PostgreSQL 数据库技术峰会北京站"圆满落幕。
+
+本次活动以"PG 与 AI 融合"为主题，IvorySQL 研发工程师矫顺田受邀带来了主题分享——《IvorySQL V4：双解析器架构下的兼容性创新实践》。
+
+![矫顺田现场分享](/images/events/event-202503-1.jpg)
+
+## 一、兼容性全景
+
+**1. 核心兼容特性**
+
+- **Oracle 兼容框架**：支持 PL/iSQL、Oracle Package（包管理）、不可见列、XML 函数（新增 11 个函数）、序列等。
+- **异构数据交互**：提供 Oracle_fdw、Postgres_fdw 等外部数据包装器。
+- **关键创新**：
+  - **不可见列**：通过 ALTER TABLE 控制列可见性。
+  - **Oracle Package**：支持包级别权限控制与缓存机制。
+
+**2. 实际项目案例（国内某金融系统）**
+
+- **目标**：替换 Oracle 存储过程，解决总账等核心系统需求。
+- **成果**：性能与稳定性达标，攻克海量数据读取内存溢出问题，深度支持 Oracle Package 功能。
+
+## 二、双解析器架构设计
+
+IvorySQL 基于 **PostgreSQL 17**，扩展了双解析器（PG/Oracle 解析器）及双端口设计（5432/1521）。
+
+**关键技术实现**
+
+- **解析器钩子机制**：通过 sql_raw_parser 动态绑定解析器。
+- **插件化设计**：内置 IvorySQL_ORA 插件，实现数据类型、系统视图、MERGE 命令等。
+
+## 三、社区发展与未来展望
+
+- **技术方向**：基于 PostgreSQL 18 开发 IvorySQL V5，优化云原生支持。
+- **全球化合作**：与西班牙 OnGres 及法国 Data Bene 推动项目共建。
+- **参与激励**：提供荣誉证书及限量周边（卫衣、背包、马克杯等）奖励。
+
+> 关注公众号【IvorySQL开源数据库社区】回复关键词 **"20250419"** 获取完整 PPT 下载链接。

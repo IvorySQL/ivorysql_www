@@ -1,0 +1,77 @@
+---
+title: "IvorySQL 5.0 Released: Evolution in Oracle Compatibility, Cloud Native, and Usability!"
+date: "2025-11-25"
+category: "product"
+categoryLabel: "Product"
+description: "Based on PostgreSQL 18.0, IvorySQL 5.0 brings breakthroughs in compatibility, ecosystem integration, and deep cloud-native support."
+image: "/images/news/ivorysql-v5-0-released-en.png"
+slug: "ivorysql-v5-0-released"
+---
+
+
+    
+
+    
+      <p>
+        Built on a full upgrade to PostgreSQL 18.0, IvorySQL 5.0 delivers groundbreaking enhancements to Oracle compatibility, upgraded ecosystem component integrations, and in-depth cloud-native support.
+      </p>
+
+      <h2 id="pg-18">Powered by PostgreSQL 18.0</h2>
+      <ul>
+        <li>Introduced an asynchronous I/O (AIO) subsystem for significant performance improvements.</li>
+        <li>The <code>pg_upgrade</code> tool: Added a new feature to preserve optimizer statistics.</li>
+        <li>Supported skip scan for multi-column B-tree indexes.</li>
+        <li>New <code>uuidv7()</code> function for time-ordered UUIDs.</li>
+        <li>Virtual generated columns now supported as the default type.</li>
+        <li>Supported OAuth authentication.</li>
+        <li>Enhanced RETURNING clause with OLD and NEW keywords.</li>
+        <li>Time range constraints for PRIMARY KEY, UNIQUE, and FOREIGN KEY.</li>
+      </ul>
+      <p>For more details, see the <a href="https://www.postgresql.org/docs/release/18.0/" target="_blank" rel="noopener noreferrer">PostgreSQL 18.0 Release Notes</a>.</p>
+
+      <h2 id="oracle-compat">21 New Oracle Compatibility Features</h2>
+      <p>IvorySQL 5.0 brings a massive leap in migration capabilities:</p>
+      <ul>
+        <li>Oracle-compatible ROWID support for seamless tool migration.</li>
+        <li>PL/iSQL %ROWTYPE and %TYPE support to simplify coding.</li>
+        <li>Empty string to NULL conversion to comply with Oracle compatibility rules.</li>
+        <li>Oracle-compatible <code>SYS_GUID</code>, <code>SYS_CONTEXT</code>, and <code>USERENV</code> functions.</li>
+        <li>Extended OUT parameter support for libpq, stored procedures, and functions.</li>
+        <li>Nested subprograms with support for overloading.</li>
+        <li>Oracle-compatible <code>INSTR</code> function and <code>FORCE VIEW</code> option.</li>
+      </ul>
+
+      <h2 id="cloud-native">Cloud-Native & Containerization</h2>
+      <ul>
+        <li><strong>Kubernetes (K8s):</strong> Deploy IvorySQL standalone or high-availability clusters via Helm.</li>
+        <li><strong>IvorySQL Operator v5:</strong> Adapted for version 5.0 with synchronized component upgrades.</li>
+        <li><strong>IvorySQL Cloud 5.0:</strong> A visual managed control plane for the full lifecycle management.</li>
+        <li><strong>Multi-Platform:</strong> Packages covering X86, ARM, MIPS, and LoongArch architectures.</li>
+      </ul>
+
+      <h2 id="fixed-issues">Fixed Issues</h2>
+      <ul>
+        <li>Resolved accurate OID conflict detection in directory tools.</li>
+        <li>Eliminated dangling pointer scenarios in the MainLoop for high concurrency.</li>
+        <li>Fixed test framework assumptions to re-enable end-to-end Oracle compatibility tests.</li>
+        <li>Corrected global unique index enforcement logic across all platforms.</li>
+      </ul>
+
+      <h2 id="source-code">Source Code</h2>
+      <ul>
+        <li>IvorySQL Database Source Code: <a href="https://github.com/IvorySQL/IvorySQL" target="_blank">https://github.com/IvorySQL/IvorySQL</a></li>
+        <li>IvorySQL Official Website: <a href="https://github.com/IvorySQL/Ivory-www" target="_blank">https://github.com/IvorySQL/Ivory-www</a></li>
+        <li>IvorySQL Documentation: <a href="https://docs.ivorysql.org/" target="_blank">https://docs.ivorysql.org/</a></li>
+        <li>IvorySQL Docker: <a href="https://github.com/IvorySQL/docker_library" target="_blank">https://github.com/IvorySQL/docker_library</a></li>
+      </ul>
+
+      <h2 id="acknowledgements">Acknowledgements</h2>
+      <p>We express our sincere gratitude to all contributors who made this release possible:</p>
+      
+        Carlos Chong, ccwxl, Cédric Villemain, Fu Bei, Fawei Zhao, Ge Sui, Grant Zhou, Imran Zaheer, jerome-peng, Jiaoshun Tian, luss, Martin Gerhardy, Mingran Feng, omstack, otegami, Ruike Sun, rophy, Shaolin Chu, Shawn Yan, Shihua Yang, Shiji Niu, Shuisen Tong, shlei6067, sjw1933, Xiangyu Liang, Xiaohui Liu, Xinjie Lv, xuexiaoganghs, Xueyu Gao, yangchunwanwusheng, Yanliang Lei, Yasir Hussain Shah, Yuan Li, Zhe Zhang, Zheng Tao, Zhenhao Pan, Zhuoyan Shi.
+      
+
+      <h2 id="feedback">Issue Feedback</h2>
+      <p>
+        The community invites you to try IvorySQL 5.0! If you discover bugs, please submit an issue on <a href="https://github.com/IvorySQL/IvorySQL/issues" target="_blank">GitHub Issues</a>.
+      </p>

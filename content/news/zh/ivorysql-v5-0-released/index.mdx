@@ -1,0 +1,76 @@
+---
+title: "IvorySQL 5.0 发布：基于 PG 18.0，Oracle 兼容、生态组件、云原生与易用性全面进化！"
+date: "2025-11-25"
+category: "product"
+categoryLabel: "产品"
+description: "基于 PostgreSQL 18.0 全面升级，IvorySQL 5.0 带来 Oracle 兼容性、生态组件集成与云原生支持的全面进化。"
+image: "/images/news/ivorysql-v5-0-released.png"
+slug: "ivorysql-v5-0-released"
+---
+
+<p>
+  IvorySQL 开源社区今天激动地向大家宣布：IvorySQL 5.0 发布了！基于 PostgreSQL 18.0 全面升级：Oracle 兼容性再突破，生态组件集成再升级，云原生深度支持，配合全平台安装包与在线丝滑体验，让复杂变得简单。
+</p>
+
+<h2 id="pg-18">基于 PostgreSQL 18.0</h2>
+<p>PostgreSQL 18.0 核心升级包括：</p>
+<ul>
+  <li>引入异步 IO（AIO）子系统，提升性能。</li>
+  <li><code>pg_upgrade</code> 工具新增优化器统计信息保留功能。</li>
+  <li>支持跳跃扫描（skip scan）。</li>
+  <li>新增 <code>uuidv7()</code> 函数。</li>
+  <li>虚拟生成列成为生成列的默认类型。</li>
+  <li>支持 OAuth 认证。</li>
+  <li>RETURNING 子句增强支持 OLD 和 NEW 关键字。</li>
+  <li>PRIMARY KEY、UNIQUE、FOREIGN KEY 增加时间范围约束支持。</li>
+</ul>
+
+<h2 id="new-features">新特性</h2>
+<h3 id="oracle-compat">新增 21 个 Oracle 兼容功能</h3>
+<ul>
+  <li>Oracle 兼容 ROWID 支持。</li>
+  <li>PL/iSQL CALL 调用语法、%ROWTYPE 及 %TYPE 支持。</li>
+  <li>空字符串自动转换为 NULL。</li>
+  <li>支持在 Oracle 和 PostgreSQL 解析器之间会话级切换。</li>
+  <li>Oracle 兼容 <code>SYS_GUID</code>、<code>SYS_CONTEXT</code> 及 <code>USERENV</code> 函数。</li>
+  <li>扩展 libpq、存储过程及函数的 OUT 参数支持。</li>
+  <li>支持嵌套子程序。</li>
+  <li>Oracle 兼容 <code>INSTR</code> 函数、FORCE VIEW 及 LIKE 运算符。</li>
+</ul>
+
+<h3 id="cloud-native">在线体验与云原生</h3>
+<ul>
+  <li>推出基于浏览器的<a href="http://trial.ivorysql.org:8080/" target="_blank">在线体验环境</a>。</li>
+  <li>全平台打包支持 X86、ARM、MIPS、LoongArch 架构。</li>
+  <li>支持 Docker Compose、Swarm 及 Kubernetes (Helm) 容器化部署。</li>
+  <li>IvorySQL Cloud 5.0 发布，支持可视化全生命周期管理。</li>
+</ul>
+
+<h3 id="extensions">扩展适配</h3>
+<p>新增或增强支持 pg_cron，pgAudit，PostGIS，pgRouting，PGroonga，ddlx，pgsql-http，system_stats，plpgsql_check，pgvector。</p>
+
+<h2 id="fixed-issues">已修复问题</h2>
+<ul>
+  <li>修复 OID 冲突检测工具避免误报。</li>
+  <li>消除 MainLoop 悬空指针场景，解决高并发下的偶发段错误。</li>
+  <li>重新启用 Oracle 兼容性端到端测试用例。</li>
+  <li>修正全局唯一索引强制约束逻辑。</li>
+</ul>
+
+<h2 id="source-code">源代码</h2>
+<ul>
+  <li><strong>IvorySQL 数据库源码：</strong><a href="https://github.com/IvorySQL/IvorySQL" target="_blank">https://github.com/IvorySQL/IvorySQL</a></li>
+  <li><strong>IvorySQL 官网：</strong><a href="https://github.com/IvorySQL/Ivory-www" target="_blank">https://github.com/IvorySQL/Ivory-www</a></li>
+  <li><strong>IvorySQL 文档：</strong><a href="https://docs.ivorysql.org/" target="_blank">https://docs.ivorysql.org/</a></li>
+  <li><strong>IvorySQL Docker：</strong><a href="https://github.com/IvorySQL/docker_library" target="_blank">https://github.com/IvorySQL/docker_library</a></li>
+</ul>
+
+<h2 id="contributors">致谢</h2>
+<p>感谢产品发布过程中的所有贡献者：</p>
+
+Carlos Chong, ccwxl, Cédric Villemain, Fu Bei, Fawei Zhao, Ge Sui, Grant Zhou, Imran Zaheer, jerome-peng, Jiaoshun Tian, luss, Martin Gerhardy, Mingran Feng, omstack, otegami, Ruike Sun, rophy, Shaolin Chu, Shawn Yan, Shihua Yang, Shiji Niu, Shuisen Tong, shlei6067, sjw1933, Xiangyu Liang, Xiaohui Liu, Xinjie Lv, xuexiaoganghs, Xueyu Gao, yangchunwanwusheng, Yanliang Lei, Yasir Hussain Shah, Yuan Li, Zhe Zhang, Zheng Tao, Zhenhao Pan, Zhuoyan Shi.
+
+<h2 id="feedback">问题反馈</h2>
+<p>
+  欢迎大家试用 IvorySQL 5.0，如发现问题，请在 GitHub 提交 issue：<a href="https://github.com/IvorySQL/IvorySQL/issues" target="_blank">https://github.com/IvorySQL/IvorySQL/issues</a>
+</p>

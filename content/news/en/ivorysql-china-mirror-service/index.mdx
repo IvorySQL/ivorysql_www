@@ -1,0 +1,49 @@
+---
+title: "IvorySQL & PostgreSQL China Mirror Service Now Available — Faster Pulls, Smoother Experience"
+date: "2025-04-24"
+category: "product"
+categoryLabel: "Product"
+description: "IvorySQL now provides a China mirror service for faster access."
+image: "/images/news/ivorysql-china-mirror-service.png"
+slug: "ivorysql-china-mirror-service"
+---
+
+
+    
+
+    
+      <p>
+        For many users in China, the speed and stability of pulling database container images often impact trial, testing, deployment, and daily operations. To provide smoother access to IvorySQL images, the IvorySQL community has launched a China-based mirror registry at <code>registry.highgo.com</code>, addressing the challenges of accessing official registries from within China. The mirror syncs long-term supported V1, the latest V5 versions, and companion PostgreSQL images, significantly improving pull efficiency and deployment experience.
+      </p>
+
+      <p>The China registry supports multiple deployment methods:</p>
+      <ul>
+        <li><strong>Docker & Podman</strong>: ivorysql/ivorysql</li>
+        <li><strong>Docker Swarm & Compose</strong>: docker-compose-ha-cluster, docker-swarm-ha-cluster</li>
+        <li><strong>Kubernetes</strong>: k8s-ha-cluster</li>
+        <li><strong>Operator & Companion</strong>: ivory-operator, postgis, pgadmin, pgbackrest, pgbouncer, postgres-exporter</li>
+      </ul>
+
+      <h2 id="registry">Registry Address</h2>
+      <p><a href="https://registry.highgo.com/" target="_blank" rel="noopener noreferrer">Registry URL</a>: <code>https://registry.highgo.com/</code></p>
+
+      <h2 id="quickstart">Quick Start</h2>
+      <p>Simply replace the Docker Hub registry with the China registry. For example, with IvorySQL 5.3 UBI8:</p>
+      <pre>docker pull registry.highgo.com/ivorysql/ivorysql:5.3-ubi8</pre>
+      <p>Then start the container:</p>
+      <pre>docker run --name ivorysql -p 5432:5432 -p 1521:1521 -e IVORYSQL_PASSWORD=your_password -d registry.highgo.com/ivorysql/ivorysql:5.3-ubi8</pre>
+
+      <h2 id="postgres">PostgreSQL Images</h2>
+      <p>The mirror also includes PostgreSQL images for comparison and compatibility testing:</p>
+      <pre>docker pull registry.highgo.com/postgres/postgres:18.3-bookworm
+docker pull registry.highgo.com/postgres/postgres:18.3-trixie</pre>
+
+      <h2 id="ecosystem">From Single Database to Full Ecosystem</h2>
+      <p>The community continues to improve ecosystem images, including plugins, connection pools, backup & recovery, monitoring, Kubernetes/Operator, and high-availability deployment.</p>
+      <p>If you have additional image needs, <strong>feedback is welcome</strong>.</p>
+
+      <blockquote>
+        Visit <a href="https://registry.highgo.com/" target="_blank" rel="noopener noreferrer">registry.highgo.com</a> to experience the new mirror service. Please <a href="https://github.com/IvorySQL/IvorySQL/issues" target="_blank" rel="noopener noreferrer">submit feedback</a> for any issues, suggestions, or additional image requests.
+      </blockquote>
+
+      <p>Faster pulls, smoother experience. Let IvorySQL deployment be seamless from the very first step.</p>

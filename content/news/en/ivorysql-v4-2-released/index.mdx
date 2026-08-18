@@ -1,0 +1,58 @@
+---
+title: "IvorySQL 4.2 Released"
+date: "2025-01-13"
+category: "product"
+categoryLabel: "Product"
+description: "Full support for PostgreSQL 17.2 with various bug fixes."
+image: "/images/news/ivorysql-v4-2-released-en.png"
+slug: "ivorysql-v4-2-released"
+---
+
+
+    
+
+    
+      <p>
+        IvorySQL 4.2 was officially released on January 13, 2025. This new version offers full support for PostgreSQL 17.2 and fixes several bugs.
+      </p>
+
+      <h2 id="enhancements">Enhanced Features</h2>
+      
+      <h3 id="pg-17-1">PostgreSQL 17.1 Enhancements</h3>
+      <ul>
+        <li>Ensured cached plans are marked as dependent on the calling role when RLS is applied to non-top-level table references.</li>
+        <li>Made libpq discard error messages received during SSL or GSS protocol negotiation.</li>
+        <li>Fixed unexpected interactions between SET SESSION AUTHORIZATION and SET ROLE.</li>
+        <li>Prevented trusted PL/Perl code from modifying environment variables.</li>
+        <li>Fixed catalog state update issues for foreign key constraints when attaching or detaching table partitions.</li>
+      </ul>
+      <p>For more details, please visit the <a href="https://www.postgresql.org/docs/release/17.1/" target="_blank">PostgreSQL 17.1 Release Notes</a>.</p>
+
+      <h3 id="pg-17-2">PostgreSQL 17.2 Enhancements</h3>
+      <ul>
+        <li>Fixed ABI breakage for extensions used with struct ResultRelInfo.</li>
+        <li>Restored ALTER &#123;ROLE|DATABASE&#125; SET role functionality.</li>
+        <li>Fixed cases where the restart_lsn of a logical replication slot could move backward.</li>
+        <li>Avoided deleting WAL files still needed when running pg_rewind.</li>
+        <li>Fixed race conditions related to deleting shared statistics entries.</li>
+      </ul>
+      <p>For more details, please visit the <a href="https://www.postgresql.org/docs/release/17.2/" target="_blank">PostgreSQL 17.2 Release Notes</a>.</p>
+
+      <h2 id="resolved-issues">IvorySQL 4.2 Resolved Issues</h2>
+      <ul>
+        <li>Fixed pg_upgrade issues; IvorySQL can now be upgraded using pg_upgrade.</li>
+        <li>Provided Rocky9 installation packages; IvorySQL 4.x can now be installed on Rocky Linux 9.</li>
+        <li>Corrected English grammar errors in ivorysql_docs.</li>
+      </ul>
+
+      <h2 id="source-code">Source Code</h2>
+      <p>IvorySQL primarily consists of two code repositories:</p>
+      <ul>
+        <li>IvorySQL Database Source Code: <a href="https://github.com/IvorySQL/IvorySQL" target="_blank">https://github.com/IvorySQL/IvorySQL</a></li>
+        <li>IvorySQL Official Website: <a href="https://github.com/IvorySQL/Ivory-www" target="_blank">https://github.com/IvorySQL/Ivory-www</a></li>
+      </ul>
+
+      <h2 id="contributors">Contributors</h2>
+      <p>The following individuals (listed in alphabetical order) contributed to this release as patch authors, committers, reviewers, testers, or issue reporters:</p>
+      
+        Cary Huang, Denis Lussier, Fawei Zhao, Grant Zhou, Hope Gao, Lily Wang, Shawn Yan, Shiji Niu, Shoubo Wang, Shuntian Jiao, Xiangyu Liang, Xinjie Lv, Zhibin Wang.

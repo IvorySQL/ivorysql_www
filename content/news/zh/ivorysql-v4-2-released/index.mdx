@@ -1,0 +1,56 @@
+---
+title: "IvorySQL 4.2 发布"
+date: "2025-01-13"
+category: "product"
+categoryLabel: "产品"
+description: "IvorySQL 4.2 全面支持 PostgreSQL 17.2，并修复了多项 bug。"
+image: "/images/news/ivorysql-v4-2-released.png"
+slug: "ivorysql-v4-2-released"
+---
+
+
+    
+
+    
+      <p>IvorySQL 4.2 已于 2025 年 1 月 13 日正式发布。新版本全面支持 PostgreSQL 17.2，并修复了多项 bug。</p>
+
+      <h2 id="enhancements">增强功能</h2>
+      <h3 id="pg-17-1">PostgreSQL 17.1 增强功能</h3>
+      <ul>
+        <li>确保当 RLS 应用于非顶级表引用时，缓存的计划会标记为依赖于调用角色</li>
+        <li>使 libpq 在 SSL 或 GSS 协议协商期间丢弃接收到的错误消息</li>
+        <li>修复 SET SESSION AUTHORIZATION 和 SET ROLE 之间的意外交互</li>
+        <li>防止受信任的 PL/Perl 代码修改环境变量</li>
+        <li>修复在附加或分离表分区时对外键约束的目录状态更新问题</li>
+      </ul>
+      <p>有关更多详细信息，请访问 <a href="https://www.postgresql.org/docs/release/17.1/" target="_blank" rel="noopener noreferrer">PostgreSQL 17.1 发布说明</a>。</p>
+
+      <h3 id="pg-17-2">PostgreSQL 17.2 增强功能</h3>
+      <ul>
+        <li>修复与 struct ResultRelInfo 配合使用的扩展的 ABI 断裂问题</li>
+        <li>恢复 ALTER &#123;ROLE|DATABASE&#125; SET role 功能</li>
+        <li>修复逻辑复制槽的 restart_lsn 可能回退的情况</li>
+        <li>在执行 pg_rewind 时避免删除仍需使用的 WAL 文件</li>
+        <li>修复与删除共享统计条目相关的竞争条件</li>
+      </ul>
+      <p>有关更多详细信息，请访问 <a href="https://www.postgresql.org/docs/release/17.2/" target="_blank" rel="noopener noreferrer">PostgreSQL 17.2 发布说明</a>。</p>
+
+      <h2 id="fixed-issues">IvorySQL 4.2 修复的问题</h2>
+      <ul>
+        <li>修复 pg_upgrade 问题，现在可使用 pg_upgrade 升级 IvorySQL</li>
+        <li>提供 Rocky9 安装包，目前可在 Rocky Linux 9 上安装 IvorySQL 4.x</li>
+        <li>修正 ivorysql_docs 中的英文语法错误</li>
+      </ul>
+
+      <h2 id="source-code">源码</h2>
+      <p>IvorySQL 主要包含 2 个代码仓库:</p>
+      <ul>
+        <li>IvorySQL 数据库源码：<a href="https://github.com/IvorySQL/IvorySQL" target="_blank" rel="noopener noreferrer">https://github.com/IvorySQL/IvorySQL</a></li>
+        <li>IvorySQL 官方网站：<a href="https://github.com/IvorySQL/Ivory-www" target="_blank" rel="noopener noreferrer">https://github.com/IvorySQL/Ivory-www</a></li>
+      </ul>
+
+      <h2 id="contributors">贡献者</h2>
+      <p>以下人员（按字母顺序排列）作为补丁作者、提交者、审阅者、测试者或问题报告人，贡献了此次版本的发布。</p>
+      <p>
+        Cary Huang, Denis Lussier, Fawei Zhao, Grant Zhou, Hope Gao, Lily Wang, Shawn Yan, Shiji Niu, Shoubo Wang, Shuntian Jiao, Xiangyu Liang, Xinjie Lv, Zhibin Wang.
+      </p>

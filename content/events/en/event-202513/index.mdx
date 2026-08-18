@@ -1,0 +1,58 @@
+---
+title: Cloud-Native PostgreSQL Webinar
+date: '2025-09-29'
+location: Online
+eventType: Webinar
+type: Online
+image: /images/events/event-202513.png
+description: >-
+  Explore cloud-native deployment patterns for PostgreSQL with IvorySQL.
+slug: event-202513
+---
+
+#
+Webinar Recap | Evolution and Practice of PostgreSQL & IvorySQL in the Cloud-Native Era
+
+📅 Date: 2025-09-29
+🌍 Online Webinar
+
+On September 29, IvorySQL organized an online webinar titled "Evolution and Practice of PostgreSQL & IvorySQL in the Cloud-Native Era." Below is a recap of the session.
+
+## Speaker Profile
+
+Cheng Tang, Founder and CTO of Zhongqi Chengshu, member of IvorySQL Expert Advisory Committee. Author of "PostgreSQL Cultivation: From Apprentice to Expert." As a senior database architect with over 20 years of experience, he possesses extensive knowledge in databases, data warehousing, operating systems, and storage. He is proficient in distributed, high-availability, and disaster recovery architectures for databases. He is familiar with international databases such as Oracle, PostgreSQL, MySQL, and Greenplum, as well as domestic databases like Highgo, PolarDB, Jincang, Gauss, Dameng, Yashan, TDSQL, Starrocks, and Doris. He is skilled in programming languages including C/C++, Golang, and Python, specializing in C-based database kernel development and using Golang and Python to write database tools.
+
+Xiangyu Liang, Highgo Engineer, with years of experience in containerization and cloud-native technologies. He has participated in the development of projects such as Data Warehouse Operator, high-availability tools, containerization, and cloud-native platforms. He currently focuses on open-source containerization and cloud-native projects.
+
+## Sharing Content Introduction
+
+In the cloud-native era, database deployment, management, and scaling face numerous challenges. This online webinar shares common pain points of PostgreSQL in cloud-native environments and provides an in-depth introduction to how IvorySQL, as a PostgreSQL compatible branch, addresses these issues through its latest 4.6 version's functional innovations (such as Kubernetes and Docker Swarm support, cloud platform management, etc.). Whether you are a database developer, O&M engineer, or cloud architect, you can benefit from this session.
+
+Sharing Outline:
+
+- Sharing pain points of PostgreSQL in cloud-native environments
+
+- Introduction to IvorySQL cloud-native features
+
+- Q&A Interaction
+
+## Q & A
+
+Q1: In a physical machine environment, will the database be killed if memory resources are insufficient? Are there any mitigation solutions for containers in this regard?
+A: On a physical machine, after configuring vm.overcommit_memory=2 (and other parameters) in /etc/sysctl.conf, the database will not be killed by OOM. Instead, when memory is insufficient, the executing SQL will throw an error directly because it cannot allocate new memory, which meets user expectations. However, using container memory limits cannot achieve this effect. Currently, there is no good solution for this issue in containers.
+
+Q2: Does IvorySQL have its own high-availability architecture?
+A: IvorySQL is perfectly compatible with Patroni. As a high-availability tool supporting PG, Patroni is very comprehensive and has an active community. You can use Patroni to build an IvorySQL high-availability cluster.
+
+Q3: Does IvorySQL have version requirements for Oracle when achieving compatibility?
+A: You can fully use IvorySQL as an Oracle database; it has no direct connection with Oracle itself.
+
+Q4: What is the difference between compatible mode and database mode, and the behavioral differences between different combinations of these two?
+A: Database mode determines at initialization whether an Oracle-compatible PG database or a native PG database is initialized. Once initialized, it cannot be modified. A native PG database cannot support Oracle compatibility features.
+
+Q5: Does IvorySQL operator support vertical scaling? What is the level of support?
+A: It supports vertical scaling of CPU and Memory for database pods, and users can adjust them at any time.
+
+PPT Download: Follow the official WeChat account [IvorySQL开源数据库社区] and reply with the keyword [20250929] to download the PPT.
+
+Playback Video: https://www.bilibili.com/video/BV1YunyzmEVW/

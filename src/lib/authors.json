@@ -1,0 +1,93 @@
+[
+  {
+    "author_id": "official",
+    "author": "IvorySQL Team",
+    "author_url": "https://github.com/ivorysql",
+    "author_image_url": "https://github.com/ivorysql.png",
+    "position": "Official Blog"
+  },
+  {
+    "author_id": "Asif",
+    "author": "Asif Rehman",
+    "author_url": "https://github.com/rasifr",
+    "author_image_url": "https://github.com/rasifr.png",
+    "position": "Contributor"
+  },
+  {
+    "author_id": "Yasir Hussain Shah",
+    "author": "Yasir Hussain Shah",
+    "author_url": "https://www.data-bene.io/en/team/yasir-hussain-shah/",
+    "author_image_url": "https://github.com/yasirshah.png",
+    "position": "Contributor"
+  },
+  {
+    "author_id": "严少安",
+    "author": "Shawn Yan",
+    "author_url": "https://github.com/shawn0915",
+    "author_image_url": "https://github.com/shawn0915.png",
+    "position": "Contributor"
+  },
+  {
+    "author_id": "唐成",
+    "author": "Tang Cheng",
+    "author_url": "https://github.com/IvorySQL",
+    "author_image_url": "https://github.com/ivorysql.png",
+    "position": "Senior Database Architect, Founder & CTO of Zqshucheng Technology"
+  },
+  {
+    "author_id": "ShunWah",
+    "author": "ShunWah",
+    "author_url": "https://github.com/IvorySQL",
+    "author_image_url": "https://github.com/ivorysql.png",
+    "position": "Contributor"
+  },
+  {
+    "author_id": "杨宇",
+    "author": "Yang Yu",
+    "author_url": "https://github.com/IvorySQL",
+    "author_image_url": "https://github.com/ivorysql.png",
+    "position": "PG ACE, Harbin User Group Core Member"
+  },
+  {
+    "author_id": "ZhangChen",
+    "author": "Zhang Chen",
+    "author_url": "https://github.com/IvorySQL",
+    "author_image_url": "https://github.com/ivorysql.png",
+    "position": "Contributor"
+  },
+  {
+    "author_id": "陶郑",
+    "author": "Tao Zheng",
+    "author_url": "https://github.com/IvorySQL",
+    "author_image_url": "https://github.com/ivorysql.png",
+    "position": "IvorySQL Core Contributor"
+  },
+  {
+    "author_id": "Oreo Yang",
+    "author": "Oreo Yang",
+    "author_url": "https://github.com/OreoYang",
+    "author_image_url": "https://github.com/OreoYang.png",
+    "position": "Contributor"
+  },
+  {
+    "author_id": "矫顺田",
+    "author": "Jiao Shuntian",
+    "author_url": "https://github.com/jiaoshuntian",
+    "author_image_url": "https://github.com/jiaoshuntian.png",
+    "position": "Contributor"
+  },
+  {
+    "author_id": "刘智龙",
+    "author": "Liu Zhilong",
+    "author_url": "https://github.com/IvorySQL",
+    "author_image_url": "https://github.com/ivorysql.png",
+    "position": "PG Database Expert, Ping An Technology"
+  },
+  {
+    "author_id": "Nickyoung",
+    "author": "Yang Xiangbo",
+    "author_url": "https://github.com/IvorySQL",
+    "author_image_url": "https://github.com/ivorysql.png",
+    "position": "PostgreSQL ACE"
+  }
+]

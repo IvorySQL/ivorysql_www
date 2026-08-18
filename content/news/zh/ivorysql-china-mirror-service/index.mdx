@@ -1,0 +1,43 @@
+---
+title: "IvorySQL & PostgreSQL 国内镜像服务上线——更快拉取，更稳体验"
+date: "2025-04-24"
+category: "product"
+categoryLabel: "产品"
+description: "IvorySQL 现已提供国内镜像服务，带来更快的访问速度。"
+image: "/images/news/ivorysql-china-mirror-service.png"
+slug: "ivorysql-china-mirror-service"
+---
+
+<p>对很多国内用户来说，数据库容器镜像的拉取速度和稳定性，常常会影响试用、测试、部署和日常运维体验。为了让大家更顺畅地获取 IvorySQL 相关镜像，IvorySQL 社区现已在 <code>registry.highgo.com</code> 推出国内镜像源，旨在解决国内用户访问官方镜像受限的问题。该镜像源同步了社区长期支持的 V1、最新 V5 版本及配套 PostgreSQL 镜像，大幅提升拉取效率与部署体验。</p>
+
+<p>国内仓库的 IvorySQL 镜像支持多种部署方式：</p>
+<ul>
+  <li><strong>Docker & Podman</strong>：ivorysql/ivorysql</li>
+  <li><strong>Docker Swarm & Compose</strong>：docker-compose-ha-cluster、docker-swarm-ha-cluster</li>
+  <li><strong>Kubernetes</strong>：k8s-ha-cluster</li>
+  <li><strong>Operator 及配套镜像</strong>：ivory-operator、postgis、pgadmin、pgbackrest、pgbouncer、postgres-exporter</li>
+</ul>
+
+<h2 id="registry">镜像仓库地址</h2>
+<p><a href="https://registry.highgo.com/" target="_blank" rel="noopener noreferrer">镜像仓库地址</a>：<code>https://registry.highgo.com/</code></p>
+
+<h2 id="quickstart">快速体验</h2>
+<p>只需要将原有 Docker Hub 镜像地址替换为国内仓库地址即可。以 IvorySQL 5.3 的 UBI8 镜像为例：</p>
+<pre>docker pull registry.highgo.com/ivorysql/ivorysql:5.3-ubi8</pre>
+<p>拉取完成后，使用下面的命令启动容器：</p>
+<pre>docker run --name ivorysql -p 5432:5432 -p 1521:1521 -e IVORYSQL_PASSWORD=your_password -d registry.highgo.com/ivorysql/ivorysql:5.3-ubi8</pre>
+
+<h2 id="postgres">PG 镜像通道</h2>
+<p>该镜像仓库中也提供了 PostgreSQL 镜像，方便国内用户在原生 PostgreSQL 与 IvorySQL 之间进行对比测试与兼容性验证：</p>
+<pre>docker pull registry.highgo.com/postgres/postgres:18.3-bookworm
+docker pull registry.highgo.com/postgres/postgres:18.3-trixie</pre>
+
+<h2 id="ecosystem">从数据库到全生态</h2>
+<p>围绕 IvorySQL 的容器化使用场景，社区也在持续完善更多生态镜像，包括插件、连接池、备份恢复、监控、Kubernetes/Operator、高可用部署等方向。</p>
+<p>如果你有其他镜像需求，<strong>欢迎反馈给 IvorySQL 社区</strong>。</p>
+
+<blockquote>
+  欢迎访问 <a href="https://registry.highgo.com/" target="_blank" rel="noopener noreferrer">registry.highgo.com</a> 体验新的镜像服务，也欢迎将使用过程中的问题、建议和镜像需求<a href="https://github.com/IvorySQL/IvorySQL/issues" target="_blank" rel="noopener noreferrer">反馈给社区</a>。
+</blockquote>
+
+<p>更快拉取，更稳体验。让 IvorySQL 的上手和部署，从第一步开始就更顺畅。</p>

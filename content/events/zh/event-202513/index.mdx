@@ -1,0 +1,60 @@
+---
+title: "直播回顾｜ PostgreSQL 与 IvorySQL 在云原生时代的演进与实践"
+date: '2025-09-29'
+location: "线上"
+eventType: "Webinar"
+type: Online
+image: /images/events/event-202513.png
+description: >-
+  IvorySQL 举办线上直播，分享 PostgreSQL 与 IvorySQL 在云原生时代的演进与实践。
+slug: "event-202513"
+---
+
+#
+直播回顾｜ PostgreSQL 与 IvorySQL 在云原生时代的演进与实践
+
+📅 活动时间：2025-09-29
+🌍 线上直播
+
+9 月 29 日，IvorySQL 组织了一场线上，直播，主题为 PostgreSQL 与 IvorySQL 在云原生时代的演进与实践，以下为本场直播的回顾。
+
+## 讲师简介
+
+**唐成**，中启乘数创始人及 CTO，IvorySQL 专家顾问委员会成员。《PostgreSQL 修炼之道：从小工到专家》的作者，中启乘数科技创始人及 CTO。资深数据库架构师，从业 20 多年，拥有 20 多年数据库及数据仓库、操作系统、存储领域的工作经验。精通数据库的分布式、高可用、容灾架构，熟悉 Oracle、PostgreSQL、MySQL、Greenplum 等国外数据库，熟悉瀚高、PolarDB、金仓、高斯、达梦、崖山、TDSQL、Starrocks、Doris 等国产数据库，熟悉 c/c++、golang 和 python 等开发语句，擅长使用 C 语言做数据库内核开发以及使用 golang 和 python 写一些数据库的的工具。
+
+**梁翔宇**，瀚高工程师，拥有多年容器化及云原生工作经验，参与过数仓 Operator、高可用工具、容器化、云原生平台等项目的开发，目前专注于开源的容器化及云原生项目。
+
+## 分享内容简介
+
+在云原生时代，数据库的部署、管理和扩展面临诸多挑战。本次线上直播将分享 PostgreSQL 在云原生环境中的常见痛点，并深入介绍 IvorySQL 作为 PostgreSQL 的兼容分支，如何通过其最新 4.6 版本的功能创新（如 Kubernetes 和 Docker Swarm 支持、云平台管理等）来解决这些问题。无论您是数据库开发者、运维工程师还是云架构师，都能从中获益。
+
+分享大纲：
+- PostgreSQL 在云原生环境中的痛点分享
+- IvorySQL 云原生功能介绍
+- 答疑互动
+
+## Q & A
+
+**Q1：物理机环境，如果内存资源不足也会被 killed 吗？相对来说容器这方面有什么规避方案吗？**
+
+A：在物理机上在 `/etc/sysctl.conf` 中配置 `vm.overcommit_memory=2`（以及一些其它参数）之后，不会发生数据库被 OOM 给 killed 掉的情况。这是，当内存不足时，执行的 SQL 会因为申请不到新内存而直接报错，符合用户的预期。而如果使用容器的内存限制，则无法达到这个效果。目前这个问题在容器中没有太好的解决办法。
+
+**Q2：IvorySQL 有没有自带的高可用架构？**
+
+A：IvorySQL 与 Patroni 完美适配，Patroni 作为支持 PG 的高可用工具，十分完备且社区活跃，可以通过 Patroni 进行 IvorySQL 高可用集群搭建。
+
+**Q3：IvorySQL 在兼容 Oracle 的时候对 Oracle 有版本要求吗？**
+
+A：完全可以将 IvorySQL 作为 Oracle 数据库进行使用，与 Oracle 自身并无关联。
+
+**Q4：兼容模式与 database 模式的区别以及这两者不同搭配值的行为差异？**
+
+A：database 模式决定了初始化时，初始化的是 Oracle 兼容的 PG 数据库还是原生的 PG 数据库，一旦初始化就无法进行修改。原生的 PG 数据库无法支持 Oracle 兼容特性。
+
+**Q5：IvorySQL operator 支持垂直扩缩容吗？支持程度是怎么样的？**
+
+A：支持数据库 pod 的 CPU、Memory 垂直扩缩容，并且用户可以随时进行调整。
+
+> **PPT 下载：关注公众号【IvorySQL开源数据库社区】，后台回复关键词【20250929】即可下载 PPT。**
+>
+> **直播回放视频：https://www.bilibili.com/video/BV1YunyzmEVW/**
