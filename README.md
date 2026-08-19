@@ -21,7 +21,3 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 - **shadcn/ui** components
 - **TypeScript**
 - **MDX** for blog/news/events content (`content/blog`, `content/news`, `content/events`)
-
-## Deployment
-
-The website is automatically deployed to [Vercel](https://vercel.com/) each time the `main` branch receives a new push.
