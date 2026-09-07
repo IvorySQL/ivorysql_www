@@ -887,7 +887,14 @@
       "subtitle": "服务器安装包与发布资源",
       "packageName": "IvorySQL 安装包",
       "latestStable": "最新稳定版",
-      "description": "GitHub 上提供最新的服务器安装包、源码压缩包和发布资源。"
+      "description": "GitHub 上提供最新的服务器安装包、源码压缩包和发布资源。",
+      "lts": "长期支持",
+      "releasedOn": "发布于 {date}",
+      "archLabel": "架构",
+      "formatLabel": "格式",
+      "downloadNow": "立即下载",
+      "unavailable": "该组合暂无对应安装包。",
+      "allReleases": "全部版本见 GitHub"
     },
     "drivers": {
       "title": "IvorySQL 驱动",
@@ -904,6 +911,7 @@
       "download": "下载"
     },
     "copyChecksum": "复制校验值",
+    "copyFailed": "复制失败",
     "contact": {
       "needHelp": "需要帮助或有疑问？"
     }

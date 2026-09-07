@@ -3,6 +3,7 @@ import { getTranslations } from "next-intl/server";
 
 import { DownloadClient } from "./DownloadClient";
 
+import { getDbReleases } from "@/lib/db-releases";
 import { buildAlternates } from "@/lib/hreflang";
 
 export async function generateMetadata({
@@ -31,7 +32,10 @@ export default async function DownloadPage({
   params: Promise<{ locale: string }>;
 }) {
   const { locale } = await params;
-  const t = await getTranslations({ locale, namespace: "DownloadPage" });
+  const [t, releases] = await Promise.all([
+    getTranslations({ locale, namespace: "DownloadPage" }),
+    getDbReleases(),
+  ]);
   return (
     <div className="bg-background">
       <div className="container mx-auto px-4 py-8 md:py-12 lg:py-16">
@@ -43,7 +47,7 @@ export default async function DownloadPage({
             {t("subheading")}
           </p>
         </div>
-        <DownloadClient />
+        <DownloadClient releases={releases} />
       </div>
     </div>
   );

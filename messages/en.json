@@ -887,7 +887,14 @@
       "subtitle": "Server packages and release assets",
       "packageName": "IvorySQL Package",
       "latestStable": "Latest Stable",
-      "description": "Latest server packages, source tarballs, and release assets on GitHub."
+      "description": "Latest server packages, source tarballs, and release assets on GitHub.",
+      "lts": "Long-term Support",
+      "releasedOn": "Released {date}",
+      "archLabel": "Arch",
+      "formatLabel": "Format",
+      "downloadNow": "Download",
+      "unavailable": "No package available for this combination.",
+      "allReleases": "All releases on GitHub"
     },
     "drivers": {
       "title": "IvorySQL Drivers",
@@ -904,6 +911,7 @@
       "download": "Download"
     },
     "copyChecksum": "Copy checksum",
+    "copyFailed": "Copy failed",
     "contact": {
       "needHelp": "Need help or have questions?"
     }
