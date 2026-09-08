@@ -1,0 +1,189 @@
+---
+slug: pg-logical-replication-future
+title: "The Future Evolution of PostgreSQL Logical Replication"
+author: "Hou Zhijie"
+category: PostgreSQL
+image: "/images/blog/covers/pg-logical-replication-future.png"
+tags: [PostgreSQL, Logical Replication, Conflict Resolution, Parallel Replication, Logical Decoding, HOW2026]
+description: "An overview of the future evolution of PostgreSQL logical replication — multi-master conflict detection and automatic resolution, parallel replication, and centralized logical decoding."
+---
+
+> Based on Hou Zhijie's (PostgreSQL Major Contributor) presentation at HOW 2026.
+
+## 1. Logical Replication Overview
+
+Logical replication is a core feature officially introduced in PostgreSQL 10. Its basic principle is to synchronize data from selected tables on the publisher to the subscriber. The simplest usage is as follows:
+
+```sql
+-- Publisher: create the table and publish it
+CREATE TABLE users(id int);
+CREATE PUBLICATION mypub FOR TABLE users;
+
+-- Subscriber: create the same table structure and subscribe
+CREATE TABLE users(id int);
+CREATE SUBSCRIPTION mysub 
+CONNECTION 'host=192.168.1.100 dbname=postgres user=repuser password=rep123' 
+PUBLICATION mypub;
+```
+
+After executing the commands above, a connection is automatically established between the two PostgreSQL instances, continuously replicating data changes made on the publisher to the subscriber.
+
+### Internal Modules and Data Flow
+
+The internal flow of logical replication involves the collaboration of multiple modules on both the publisher and the subscriber:
+
+1. The user writes data on the publisher, generating WAL records
+2. The `logical decoder` reads the WAL records, while the `replication slot` protects unconsumed WAL records from being cleaned up
+3. Logical decoding converts the binary WAL into operational, concrete data
+4. The Output Plugin obtains the decoded data; developers can implement custom logic here
+5. Data is sent to the subscriber, where the `apply worker` receives it and parses it into SQL commands (INSERT/UPDATE/DELETE) to apply to the subscriber database
+6. The `application origin` records the replication progress, ensuring the subscriber can resume from the correct position after restart, avoiding duplication or omission
+7. The `table sync worker` is responsible for copying the full initial data; once complete, the `apply worker` takes over incremental synchronization
+
+![img](/images/blog/2026-08-11-pg-logical-replication-future/1.png)
+
+### Historical Evolution
+
+Since PostgreSQL 10, new features have been added to logical replication every year:
+
+- **DDL enhancements**: SQL commands on both the publisher and the subscriber have been continuously enhanced for ease of use
+- **WAL prefetching**: improves WAL read performance
+- **Streaming mode**: supports real-time transfer of large transactions, reading and streaming them on the fly without waiting for the transaction to commit
+- **Row Filter**: supports filtering by row, replicating only the data that satisfies the conditions
+- **Sequence synchronization**: introduces the `sequence sync worker` to replicate sequence data
+- **Conflict detection**: provides the foundation for bidirectional replication scenarios
+
+Even so, logical replication still has two clear areas of potential: **multi-master consistency** and **performance**. Currently, although logical replication supports concurrent writes from multiple nodes without loop-back problems, data conflicts caused by bidirectional writes cannot be handled automatically. In terms of performance, logical replication is more than an order of magnitude slower than physical replication, and the single-process Apply Worker keeps experiencing growing latency under high-concurrency writes.
+
+The following three new features are designed precisely for these pain points.
+
+## 2. Multi-Master Conflict Detection and Automatic Resolution
+
+### How Conflicts Arise
+
+In a multi-master write scenario, if two nodes modify the same row simultaneously, a conflict arises. Take the figure below as an example: the publisher inserts `(1, R)`, while the subscriber concurrently inserts `(1, B)`, both with primary key 1. When the publisher's modification reaches the subscriber, it finds that the primary key already exists, the Apply Worker reports an error and stops, and logical replication is interrupted.
+
+![img](/images/blog/2026-08-11-pg-logical-replication-future/2.png)
+
+### Detectable Conflict Types
+
+PostgreSQL can currently identify the following conflict types in the logs:
+
+| Conflict Type | Description |
+|---------|------|
+| `insert_exists` | The inserted row violates a non-deferrable unique constraint (primary key conflict) |
+| `update_origin_differs` | The row to be updated was previously modified by another origin |
+| `update_deleted` | The tuple to be updated has been concurrently deleted by another origin |
+
+The log outputs similar information:
+```
+ERROR: conflict detected on relation "public.test": conflict=insert_exists
+DETAIL: Could not apply remote change: remote row (1, 'remote'). 
+Key already exists in unique index "test_pkey"
+```
+
+### Existing Manual Resolution Methods
+
+Currently PostgreSQL provides several ways to handle conflicts manually:
+
+**Method 1: disable_on_error**
+After this option is set on the subscriber, the subscriber stops when a conflict occurs instead of continuously reporting errors, giving the user a chance to intervene and analyze.
+
+**Method 2: SKIP LSN**
+```sql
+ALTER SUBSCRIPTION mysub SKIP (lsn = '0/1566D10');
+```
+Skips the transaction corresponding to the specified LSN, but the data of that transaction is lost and needs to be recovered manually.
+
+**Method 3: Custom Trigger**
+Users write their own Trigger to detect and handle conflicts before the Apply Worker writes.
+```sql
+CREATE TRIGGER trg_ignore_duplicate_insert BEFORE INSERT ON my_table
+FOR EACH ROW EXECUTE FUNCTION ignore_duplicate_insert();
+ALTER TABLE my_table ENABLE REPLICA TRIGGER ignore_duplicate_insert;
+```
+
+**Method 4: Advance Origin**
+Advances the replication progress via `pg_replication_origin_advance`, skipping part of the WAL, which also loses data.
+
+### Future Automated Solutions
+
+**Conflict Log Table**
+A new system catalog is added to store conflict history data. Users can directly query the conflicted tuples, transaction types, and other information via SQL, without parsing the logs themselves.
+
+![img](/images/blog/2026-08-11-pg-logical-replication-future/3.png)
+
+**Automatic Conflict Resolution Strategies**
+Specify the conflict resolution strategy when creating or modifying a subscription:
+```sql
+CREATE SUBSCRIPTION mysub CONNECTION '...' PUBLICATION mypub 
+CONFLICT RESOLVER (insert_exists = apply_remote, ...);
+
+ALTER SUBSCRIPTION mysub CONFLICT RESOLVER (insert_exists = skip, ...);
+```
+
+The built-in conflict resolution methods include:
+
+| Strategy | Behavior |
+|---------|------|
+| `apply_remote` | Prefer applying the publisher's modification (e.g., delete the conflicting row on the subscriber, then insert the new data) |
+| `skip` | Skip only the conflicting row modification; the rest of the transaction is applied normally |
+| `error` | Report an error directly when a conflict occurs |
+| `last_update_win` | Apply the modification with the latest timestamp, maintaining eventual consistency |
+
+**Dead Tuple Retention**
+To correctly detect conflicts such as `update_deleted`, it must be ensured that deleted tuples are not cleaned up by Vacuum before conflict detection completes. A new subscription option, `retain_dead_tuples`, dynamically retains dead tuples and allows them to be reclaimed once they are confirmed no longer needed.
+
+## 3. Parallel Replication
+
+### The Performance Bottleneck
+
+Logical replication has only one `apply worker` process on the subscriber by default. When a large number of clients write concurrently on the publisher, the single process cannot process all changes in time, and replication latency keeps increasing. This is the core reason why logical replication performance is far lower than physical replication.
+
+### Limitations of Existing Methods
+
+**Streaming Parallel (PG 16+)**: effective only for uncommitted large transactions; it provides no optimization for small transactions and is not suitable for ordinary scenarios.
+
+**Splitting across multiple subscriptions**: when splitting by table, the replication order of two tables linked by foreign keys cannot be guaranteed, which may lead to data inconsistency; when splitting by row, the commit order cannot be kept consistent with the publisher.
+
+### New Solution Design
+
+Open an independent process for each transaction to apply it in parallel. The core mechanisms are as follows:
+
+**Dependency detection**: the Leader Worker computes dependencies between transactions when distributing changes. If two transactions modify the same row or might violate a unique constraint, they are considered dependent, and the later transaction must wait for the earlier one to complete before executing.
+
+**Commit order guarantee**: even if there is no data dependency between transactions, the commit phase must still strictly follow the publisher's commit order to ensure data consistency.
+
+**Performance data**: benchmark tests show that increasing the number of workers can improve replication throughput by about 3x. Limited by the overhead of commit-order coordination, the performance gain has an upper bound, but it can already significantly improve the latency problem in high-concurrency scenarios.
+
+![img](/images/blog/2026-08-11-pg-logical-replication-future/4.png)
+
+![img](/images/blog/2026-08-11-pg-logical-replication-future/5.png)
+
+## 4. Centralized Logical Decoding
+
+### The Problem: Repeated Decoding
+
+In a multi-subscriber scenario, each subscriber corresponds to an independent WALSender process, and every process must independently perform logical decoding on the same WAL records. This repeated decoding causes:
+
+- CPU overhead to grow linearly with the number of subscriptions
+- Decoding work to be performed repeatedly, resulting in poor scalability
+- Higher latency, with the problem aggravated under heavy write loads
+
+### The Solution
+
+A dedicated process is introduced to decode the WAL records uniformly, and the decoding results are shared and reused across all WALSenders. Each subscriber directly consumes the already-decoded data without parsing it repeatedly. This is essentially a pipeline-style processing mechanism that reduces decoding from N times to once.
+
+![img](/images/blog/2026-08-11-pg-logical-replication-future/6.png)
+
+## Summary
+
+This article introduces three core directions in the future evolution of PostgreSQL logical replication:
+
+1. **Multi-master conflict detection and automatic resolution**: through the conflict log table and configurable automatic resolution strategies, the conflict handling that currently requires manual intervention is made procedural and automated, improving the usability of multi-master architectures.
+
+2. **Parallel replication**: through dependency-aware transaction distribution and commit order guarantees, it breaks through the performance ceiling of the single-process Apply Worker, achieving roughly 3x throughput improvement in measured tests.
+
+3. **Centralized decoding**: eliminates the repeated-decoding overhead in multi-subscriber scenarios, reducing the number of decoding passes from O(n) to O(1).
+
+The features above are expected to be implemented in PostgreSQL 20, PostgreSQL 21, or PostgreSQL 22. In addition to this technical evolution, Apple has recently decided to form a team and invest resources in participating in community development, becoming yet another major international company — after Microsoft, Amazon, and Google — to give back to the PostgreSQL community, which is a positive signal for the development of the entire ecosystem.

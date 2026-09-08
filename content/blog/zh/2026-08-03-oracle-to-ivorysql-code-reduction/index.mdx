@@ -1,0 +1,387 @@
+---
+slug: oracle-to-ivorysql-code-reduction
+title: "Oracle 迁到 IvorySQL，到底能少改多少代码？我实测了一遍"
+author: "施嘉伟"
+category: IvorySQL
+image: "/images/blog/covers/oracle-to-ivorysql-code-reduction.png"
+tags: [Oracle, IvorySQL, PostgreSQL, Migration, Compatibility, PL/SQL]
+description: "同机实测 Oracle 19c、PostgreSQL 18 与 IvorySQL 5.4，逐项验证 Oracle 语法、Package、转账事务与客户端连接，量化迁移能省下多少代码改造。"
+---
+> 本文作者：施嘉伟，12 年数据库从业经验，Oracle ACE Pro、PostgreSQL ACE，OCM/PGCM/KCM 认证。 IvorySQL 专家顾问委员、KVA、崖山 YVP、KWDB MVP、PolarDB 开源社区/HaloDB 技术顾问、TiDB 社区技术布道师、青学会 MOP 技术社区专家顾问。微信公众号：《Digital Observer》
+
+去 O 的项目一旦进入实施阶段，团队问的问题就变得很具体：原来的 SQL 还能不能跑？PL/SQL 要改多少？客户端要不要换？事务语义会不会变？
+
+文档里写高度兼容 Oracle，落到这四个问题上，通常说不清楚。
+
+所以我干脆在一台 Linux 8 的机器上，把 Oracle 19c、PostgreSQL 18 和 IvorySQL 5.4 装在一起，用同一套业务场景各跑一遍。
+
+说明：TPS、QPS 一律不测。三个库的参数、内存分配、存储布局都不一样，跑出来的数字没有可比性，贴出来只会误导人。这次只看 Oracle 语法、Package、转账事务、客户端连接和日常运维。
+
+## 一、测试环境
+
+三个库跑在同一台 linux 服务器上。
+
+| 项目        | 配置                                               |
+| ----------- | -------------------------------------------------- |
+| 操作系统    | Oracle Linux Server 8.10                           |
+| CPU         | 4 核                                               |
+| 内存        | 23 GiB                                             |
+| Oracle      | 19c Enterprise Edition 19.3.0.0.0                  |
+| Oracle 实例 | orcl，非 CDB，READ WRITE                           |
+| PostgreSQL  | 18.4，PGDG 官方 RPM                                |
+| IvorySQL    | 5.4，底层 PostgreSQL 18.4                          |
+| 字符集      | Oracle 为 AL32UTF8，PostgreSQL 和 IvorySQL 为 UTF8 |
+
+| 数据库        |  端口 | 说明                        |
+| ------------- | ----: | --------------------------- |
+| Oracle 19c    |  1521 | Oracle Listener             |
+| IvorySQL 5.4  |  5432 | PostgreSQL 协议连接         |
+| IvorySQL 5.4  |  1522 | ivorysql.port 独立监听端口  |
+| PostgreSQL 18 | 55432 | 仅绑定 127.0.0.1 的测试实例 |
+
+三个服务都由 systemd 托管。IvorySQL 跑在 ivorysql 用户下，数据目录 /var/lib/ivorysql/5.4/data，页校验和已启用。
+
+## 二、先说结论
+
+IvorySQL 5.4 的 Oracle 兼容能力，确实明显高于原生 PostgreSQL。NUMBER、VARCHAR2、空字符串转 NULL、DUAL、NVL、DECODE、SYSDATE、序列的 .NEXTVAL、PL/iSQL 和 Package，这次全部通过。
+
+| 测试项                     | Oracle 19c | IvorySQL 5.4 | PostgreSQL 18  |
+| -------------------------- | ---------- | ------------ | -------------- |
+| 空字符串视为 NULL          | 通过       | 通过         | 不同语义       |
+| NVL、DECODE、DUAL、SYSDATE | 通过       | 通过         | 需要改写       |
+| NUMBER、VARCHAR2           | 通过       | 通过         | 需要改写       |
+| sequence.NEXTVAL           | 通过       | 通过         | 需要改写       |
+| Oracle Package             | 通过       | 通过         | 不支持 Package |
+| CONNECT BY                 | 通过       | 失败         | 失败           |
+| ROWNUM                     | 通过       | 失败         | 失败           |
+
+数据类型、函数和 Package 这一层，IvorySQL 能省掉相当一部分首轮改造。但 CONNECT BY、ROWNUM、客户端协议和企业级能力，还得单独评估。
+
+## 三、安装体验：像 PostgreSQL，但要留意双端口
+
+IvorySQL 5.4 官方提供 x86_64 RPM。装完之后软件目录是 /usr/ivory-5，核心命令还是那几个老朋友：initdb、pg_ctl、psql、pg_dump、pg_basebackup。
+
+初始化 Oracle 模式实例：
+
+```bash
+/usr/ivory-5/bin/initdb \
+  -D /var/lib/ivorysql/5.4/data \
+  -U ivorysql \
+  -m oracle \
+  --data-checksums \
+  --encoding=UTF8 \
+  --locale=en_US.utf8 \
+  --auth-local=peer \
+  --auth-host=scram-sha-256
+```
+
+初始化完成后，用 pg_ctl 启动数据库：
+
+```bash
+/usr/ivory-5/bin/pg_ctl \
+  -D /var/lib/ivorysql/5.4/data \
+  -l logfile \
+  start
+```
+
+输出：
+
+```text
+waiting for server to start.... stopped waiting
+pg_ctl: could not start server
+Examine the log output.
+```
+
+第一次启动就失败了。Oracle Listener 占着 1521，而 IvorySQL 的 ivorysql.port 默认也是 1521，日志报完端口冲突，进程直接退出。
+
+把独立端口改成 1522：
+
+```conf
+ivorysql.listen_addresses = '*'
+ivorysql.port = 1522
+```
+
+PostgreSQL 协议那条继续留在 5432。改完之后两个端口都正常监听。
+
+和 Oracle 同机部署的话，装之前先看一眼 1521 有没有人占。
+
+```bash
+lsof -i :1521
+```
+
+## 四、基础 Oracle 语义对比
+
+### 1. 空字符串与 NULL
+
+Oracle 把空字符串当 NULL，PostgreSQL 认为这是两个不同的值。这个差异不只是写法问题，它会直接影响非空约束、条件判断、唯一索引，以及应用层的参数校验。
+
+测试 SQL：
+
+```sql
+SELECT CASE
+         WHEN CAST('' AS VARCHAR) IS NULL THEN 'NULL'
+         ELSE 'NOT NULL'
+       END AS empty_string_semantics;
+```
+
+结果：
+
+| 数据库        | 结果     |
+| ------------- | -------- |
+| Oracle 19c    | NULL     |
+| IvorySQL 5.4  | NULL     |
+| PostgreSQL 18 | NOT NULL |
+
+本次 Oracle 模式实例中，IvorySQL 的 ivorysql.enable_emptystring_to_NULL 是 on。迁移老应用时，这一条能省掉不少应用层的判空适配。
+
+但也不能马虎大意。空字符串转 NULL 本身就会改变一部分约束的判定结果，历史数据、索引和接口参数还是得挨个看过去。
+
+### 2. NVL、DECODE、DUAL 和 SYSDATE
+
+几条 Oracle 里天天写的 SQL，在 IvorySQL 里直接跑通了：
+
+```sql
+SELECT NVL(CAST(NULL AS VARCHAR), CAST('fallback' AS VARCHAR));
+SELECT DECODE(2, 1, 'one', 2, 'two', 'other');
+SELECT SYSDATE FROM dual;
+```
+
+IvorySQL 分别返回 fallback、two 和当前日期。同样的语句丢给原生 PostgreSQL，报的是 NVL 函数不存在、dual 表不存在，得改成 `COALESCE`、`CASE` 和 `CURRENT_TIMESTAMP`。
+
+这里有个坑容易被忽略。IvorySQL 的会话要先进 Oracle 兼容模式，才会按 Oracle 语法解析：
+
+```sql
+SET ivorysql.compatible_mode = oracle;
+```
+
+如果客户端把 SET 和后面的 Oracle SQL 塞进同一个协议消息发过去，服务端可能会用原来的模式先把整批语句解析掉。所以迁移工具应该在连接建立之后单独设一次会话模式，再发业务 SQL。
+
+### 3. NUMBER、VARCHAR2 与序列
+
+后面的转账案例直接用了这张表：
+
+```sql
+CREATE TABLE account_balance (
+  account_id NUMBER PRIMARY KEY,
+  account_name VARCHAR2(50) NOT NULL,
+  balance NUMBER(18,2) NOT NULL,
+  updated_at DATE DEFAULT SYSDATE NOT NULL
+);
+```
+
+Oracle 19c 和 IvorySQL 5.4 都建成功了。Oracle 风格的序列访问 IvorySQL 也认：
+
+```sql
+CREATE SEQUENCE transfer_seq START WITH 1 INCREMENT BY 1;
+SELECT transfer_seq.NEXTVAL FROM dual;
+```
+
+原生 PostgreSQL 这边，类型要换成 NUMERIC、VARCHAR、TIMESTAMP，序列调用改写成：
+
+```sql
+SELECT nextval('transfer_seq');
+```
+
+即便类型能对上，精度、默认值、隐式转换和日期计算这几处仍然要逐个核对。
+
+## 五、没通过的两个：CONNECT BY 和 ROWNUM
+
+层次查询用的是 Oracle 里最常见的写法：
+
+```sql
+SELECT LEVEL
+FROM dual
+CONNECT BY LEVEL <= 3;
+```
+
+Oracle 19c 返回 1、2、3。IvorySQL 5.4 报错：
+
+```text
+ERROR: syntax error at or near "BY"
+```
+
+ROWNUM 同样没过：
+
+```text
+ERROR: "rownum": invalid identifier
+```
+
+在 IvorySQL 和 PostgreSQL 里，这两类写法可以按场景换成递归 CTE、generate_series、窗口函数或者 FETCH FIRST：
+
+```sql
+SELECT ROW_NUMBER() OVER (ORDER BY value) AS rn, value
+FROM (VALUES (10), (20), (30)) t(value)
+FETCH FIRST 2 ROWS ONLY;
+```
+
+这两个才是迁移评估里最容易漏的东西。组织树、菜单树、地区层级、ROWNUM 分页，这类 SQL 一般不在表结构里，而是散在报表、存储过程和 ORM 的自定义查询里。只对着 Schema 做兼容性扫描，根本发现不了。开工前必须把这两类 SQL 数清楚。
+
+## 六、核心测试：账户转账 Package
+
+建了两个账户：
+
+| 账号 | 姓名  | 初始余额 |
+| ---: | ----- | -------: |
+| 1001 | Alice |  1000.00 |
+| 1002 | Bob   |   500.00 |
+
+转账过程做四件事：锁定付款账户、检查余额、更新双方余额、写转账日志。先转 125.50，再提交一笔 99999 的转账验证异常路径。
+
+Oracle 的 Package 接口：
+
+```sql
+CREATE OR REPLACE PACKAGE pkg_transfer AS
+  PROCEDURE transfer(
+    p_from_account NUMBER,
+    p_to_account NUMBER,
+    p_amount NUMBER
+  );
+  FUNCTION balance_of(p_account_id NUMBER) RETURN NUMBER;
+END pkg_transfer;
+/
+```
+
+Package Body 里用 SELECT ... FOR UPDATE 锁住付款账户，余额不足时 Oracle 调 `raise_application_error`(-20001, 'insufficient balance')。
+
+IvorySQL 用的 Package 和 Package Body 结构几乎没动，主要改了异常写法，换成 PL/iSQL 支持的形式：
+
+```sql
+IF v_from_balance < p_amount THEN
+  RAISE EXCEPTION 'insufficient balance';
+END IF;
+```
+
+调用方式还是包名加过程名：
+
+```sql
+CALL pkg_transfer.transfer(1001, 1002, 125.50);
+```
+
+PostgreSQL 18 没有 Package，只能把过程和函数放进 Schema 里组织，用 PL/pgSQL 重写一遍，表结构也得换成 NUMERIC、VARCHAR、CURRENT_TIMESTAMP。
+
+三个库的成功转账结果一致：
+
+| 账号 | 转账后余额 |
+| ---: | ---------: |
+| 1001 |     874.50 |
+| 1002 |     625.50 |
+
+转账日志各生成一条 SUCCESS 记录，金额 125.50。余额不足的那笔都抛了异常，没有二次扣款，两个账户仍然是 874.50 和 625.50。
+
+这部分最能说明 IvorySQL 的价值在哪。业务结果上，原生 PostgreSQL 一样能做到，代价是开发要重写类型、函数、Package 组织方式和部分过程语法。IvorySQL 把 Oracle Package 的结构原样留了下来，对写惯 PL/SQL 的人来说，代码读起来是熟的，迁移时心里有底。
+
+## 七、psql -f 执行 Package 脚本验证
+
+对 Oracle 风格的 Package 脚本做了补充验证。执行命令：
+
+```bash
+PGHOST=127.0.0.1 PGPORT=1521 PGUSER=ivorysql ${IVY_BIN_DIR}/psql -f a.sql
+```
+
+输出：
+
+```text
+CREATE PACKAGE
+CREATE PACKAGE BODY
+```
+
+测试中，psql -f 可以直接执行包含 /终止符的 Package 和 Package Body 脚本，没有出现脚本被提前截断的问题。
+
+## 八、SQLPlus 能直连 IvorySQL 吗
+
+IvorySQL 配置里有个 ivorysql.port，这次设成了 1522。我分别用 psql 和 Oracle 19c 的 SQLPlus 去连这个端口。
+
+psql 连上了：
+
+```text
+PostgreSQL 18.4 (IvorySQL 5.4)
+PSQL_STATUS=0
+```
+
+SQLPlus 这样连：
+
+```text
+sqlplus ivorysql/******@//127.0.0.1:1522/ivory_compare
+```
+
+客户端返回：
+
+```text
+ORA-12537: TNS:connection closed
+SQLPLUS_STATUS=249
+```
+
+服务端同时记了一条：
+
+```text
+invalid length of startup packet
+```
+
+就这次官方 5.4 RPM 的实际表现来看，1522 端口收的仍然是 PostgreSQL 启动包，不能当 Oracle TNS Listener 用。依赖 SQL\*Plus、OCI、Oracle JDBC Thin 或者固定 TNS 连接串的应用，驱动和连接层要单独验证，改个 IP 和端口是过不去的。
+
+这个结果直接决定了应用要不要换驱动这个判断。SQL 语法兼容和网络协议兼容，是两件事，得分开验。
+
+## 九、运维体验与软件占用
+
+三个软件目录的占用：
+
+| 软件目录        |    占用 |
+| --------------- | ------: |
+| Oracle 19c Home | 7.0 GiB |
+| IvorySQL 5.4    | 487 MiB |
+| PostgreSQL 18   |  48 MiB |
+
+这几个数字只反映安装包内容，跟性能没关系。IvorySQL 的 RPM 打包了比较多的扩展、客户端和空间数据组件，所以比基础的 PGDG 包大一截。
+
+运维命令和 PostgreSQL 基本一致：
+
+```bash
+systemctl status ivorysql
+/usr/ivory-5/bin/pg_isready -h 127.0.0.1 -p 5432
+/usr/ivory-5/bin/psql -d ivory_compare
+/usr/ivory-5/bin/pg_dump -d ivory_compare
+```
+
+PostgreSQL DBA 那套 WAL、VACUUM、备份恢复、日志排查的经验可以直接接过来用。Oracle DBA 则要补 MVCC、Autovacuum、角色权限和执行计划工具这几块。
+
+备份策略、归档、监控、主备、故障切换、升级演练，生产上还得一项项补齐。本文只验了单实例功能，高可用和灾备不下结论。
+
+## 十、三个库怎么选
+
+### Oracle 19c
+
+已经深度用上 PL/SQL、RAC、Data Guard、分区、审计和商业工具链的核心系统，继续用 Oracle 是合理的。企业功能成熟，厂商兜底，代价是授权、技能和运维成本。
+
+### PostgreSQL 18
+
+新系统、云原生应用，或者团队本来就愿意按 PostgreSQL 原生方式开发，直接上 PG。生态足够成熟。从 Oracle 迁过来的话，SQL、过程语言和应用驱动要做一次系统性改造，这笔账要提前算。
+
+### IvorySQL 5.4
+
+想进 PostgreSQL 生态，又不想在第一轮就承担全部 Oracle 改造量的项目，IvorySQL 值得做 PoC。以下几种情况优先考虑：
+
+- 业务里大量使用 NUMBER、VARCHAR2、NVL、DECODE、序列和 Package；
+- 团队熟悉 PL/SQL，希望保留过程代码的组织方式；
+- 计划逐步替换 Oracle，能接受一部分 SQL 和客户端改造；
+- 需要开源数据库方案，并且愿意投入建设 PostgreSQL 运维能力。
+
+反过来，下面这几种情况不能简单做决定：
+
+- 大量使用 CONNECT BY、ROWNUM 和其他 Oracle 专有 SQL；
+- 应用强依赖 SQL\*Plus、OCI、TNS 或 Oracle JDBC 的协议行为；
+- 核心链路依赖 RAC、Data Guard、专有诊断包和复杂分区；
+- 项目要求不改 SQL、不改驱动、不改发布脚本。
+
+## 十一、我的判断
+
+在这次转账测试中，IvorySQL 5.4 跑通了 Oracle 数据类型、序列、Package、Package Body、SELECT FOR UPDATE 行锁和异常处理，最终业务结果与 Oracle 19c、PostgreSQL 18 一致。
+
+兼容能力可以减少迁移改造量，但迁移前的检查不能省。CONNECT BY、ROWNUM、SQL\*Plus 连接方式和脚本终止符都需要逐项扫描。团队还要处理对象转换、应用驱动适配和业务回归测试。
+
+评估 IvorySQL 时，我更愿意把它看成“带 Oracle 兼容层的 PostgreSQL”。数据库架构、部署和运维沿用 PostgreSQL 体系，数据类型、函数和 PL/SQL 语法向 Oracle 靠拢。存量 Oracle 系统可以少改一部分 SQL 和存储过程。新系统是否采用，取决于团队是否需要 Oracle 兼容，以及团队对 PostgreSQL 技术栈的掌握程度。
+
+选型前，团队应拿真实表结构、核心 SQL、存储过程和并发事务做 PoC。本文的转账案例只验证了一个典型事务链路，不能代表整个系统的迁移结果。
+
+**IvorySQL 项目地址：
+
+https://github.com/IvorySQL/IvorySQL**

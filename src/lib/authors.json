@@ -85,7 +85,119 @@
   },
   {
     "author_id": "Nickyoung",
-    "author": "Yang Xiangbo",
+    "author": "Nickyoung",
+    "author_url": "https://github.com/IvorySQL",
+    "author_image_url": "https://github.com/ivorysql.png",
+    "position": "PostgreSQL ACE"
+  },
+  {
+    "author_id": "萧少聪",
+    "author": "Xiao Shaocong",
+    "author_url": "https://github.com/IvorySQL",
+    "author_image_url": "https://github.com/ivorysql.png",
+    "position": "Founder of Cortrix.AI"
+  },
+  {
+    "author_id": "吕海波",
+    "author": "Lyu Haibo",
+    "author_url": "https://github.com/IvorySQL",
+    "author_image_url": "https://github.com/ivorysql.png",
+    "position": "PostgreSQL ACED"
+  },
+  {
+    "author_id": "施嘉伟",
+    "author": "Shi Jiawei",
+    "author_url": "https://github.com/IvorySQL",
+    "author_image_url": "https://github.com/ivorysql.png",
+    "position": "Oracle ACE Pro & PostgreSQL ACE"
+  },
+  {
+    "author_id": "德哥",
+    "author": "digoal",
+    "author_url": "https://github.com/IvorySQL",
+    "author_image_url": "https://github.com/ivorysql.png",
+    "position": "PostgreSQL ACED"
+  },
+  {
+    "author_id": "魏波",
+    "author": "Wei Bo",
+    "author_url": "https://github.com/IvorySQL",
+    "author_image_url": "https://github.com/ivorysql.png",
+    "position": "Deputy Secretary-General, PG Branch (China)"
+  },
+  {
+    "author_id": "侯志杰",
+    "author": "Hou Zhijie",
+    "author_url": "https://github.com/IvorySQL",
+    "author_image_url": "https://github.com/ivorysql.png",
+    "position": "PostgreSQL Major Contributor"
+  },
+  {
+    "author_id": "付超",
+    "author": "Fu Chao",
+    "author_url": "https://github.com/IvorySQL",
+    "author_image_url": "https://github.com/ivorysql.png",
+    "position": "Oracle ACE & PostgreSQL ACE"
+  },
+  {
+    "author_id": "阎书利",
+    "author": "Yan Shuli",
+    "author_url": "https://github.com/IvorySQL",
+    "author_image_url": "https://github.com/ivorysql.png",
+    "position": "PostgreSQL ACE"
+  },
+  {
+    "author_id": "Xiao Shaocong",
+    "author": "Xiao Shaocong",
+    "author_url": "https://github.com/IvorySQL",
+    "author_image_url": "https://github.com/ivorysql.png",
+    "position": "Founder of Cortrix.AI"
+  },
+  {
+    "author_id": "Lyu Haibo",
+    "author": "Lyu Haibo",
+    "author_url": "https://github.com/IvorySQL",
+    "author_image_url": "https://github.com/ivorysql.png",
+    "position": "PostgreSQL ACED"
+  },
+  {
+    "author_id": "Shi Jiawei",
+    "author": "Shi Jiawei",
+    "author_url": "https://github.com/IvorySQL",
+    "author_image_url": "https://github.com/ivorysql.png",
+    "position": "Oracle ACE Pro & PostgreSQL ACE"
+  },
+  {
+    "author_id": "digoal",
+    "author": "digoal",
+    "author_url": "https://github.com/IvorySQL",
+    "author_image_url": "https://github.com/ivorysql.png",
+    "position": "PostgreSQL ACED"
+  },
+  {
+    "author_id": "Wei Bo",
+    "author": "Wei Bo",
+    "author_url": "https://github.com/IvorySQL",
+    "author_image_url": "https://github.com/ivorysql.png",
+    "position": "Deputy Secretary-General, PG Branch (China)"
+  },
+  {
+    "author_id": "Hou Zhijie",
+    "author": "Hou Zhijie",
+    "author_url": "https://github.com/IvorySQL",
+    "author_image_url": "https://github.com/ivorysql.png",
+    "position": "PostgreSQL Major Contributor"
+  },
+  {
+    "author_id": "Fu Chao",
+    "author": "Fu Chao",
+    "author_url": "https://github.com/IvorySQL",
+    "author_image_url": "https://github.com/ivorysql.png",
+    "position": "Oracle ACE & PostgreSQL ACE"
+  },
+  {
+    "author_id": "Yan Shuli",
+    "author": "Yan Shuli",
     "author_url": "https://github.com/IvorySQL",
     "author_image_url": "https://github.com/ivorysql.png",
     "position": "PostgreSQL ACE"

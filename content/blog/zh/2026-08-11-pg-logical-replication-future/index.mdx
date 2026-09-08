@@ -1,0 +1,193 @@
+---
+slug: pg-logical-replication-future
+title: "PostgreSQL逻辑复制的未来演进"
+author: "侯志杰"
+category: PostgreSQL
+image: "/images/blog/covers/pg-logical-replication-future.png"
+tags: [PostgreSQL, Logical Replication, Conflict Resolution, Parallel Replication, Logical Decoding, HOW2026]
+description: "本文介绍PostgreSQL逻辑复制未来演进的三个核心方向——多主冲突检测与自动解决、并行复制与集中式逻辑解码，这些功能预计将在PostgreSQL 20/21/22中陆续实装。"
+---
+> 本文整理于 HOW 2026 演讲内容，演讲者：侯志杰，PostgreSQL Major Contributor。
+
+
+## 逻辑复制概述
+
+逻辑复制是PostgreSQL在PG 10版本正式引入的核心功能，其基本原理是将发布端部分表的数据同步到订阅端。最简单的使用方式如下：
+
+```sql
+-- 发布端：创建表并发布
+CREATE TABLE users(id int);
+CREATE PUBLICATION mypub FOR TABLE users;
+
+-- 订阅端：创建相同表结构并订阅
+CREATE TABLE users(id int);
+CREATE SUBSCRIPTION mysub 
+CONNECTION 'host=192.168.1.100 dbname=postgres user=repuser password=rep123' 
+PUBLICATION mypub;
+```
+
+执行上述命令后，两个PostgreSQL实例之间会自动建立连接，持续将发布端的数据修改复制到订阅端。
+
+### 内部模块与数据流
+
+逻辑复制的内部流程涉及发布端与订阅端多个模块的协作：
+
+1. 用户在发布端写入数据，产生WAL日志
+2. `logical decoder`读取WAL日志，`replication slot`保护未被消费的日志不被清理
+3. 逻辑解码将二进制日志转化为可操作的具体数据
+4. Output Plugin（输出插件）获取解码后的数据，开发者可在此实现自定义逻辑
+5. 数据发送至订阅端，由`apply worker`接收并解析为SQL命令（INSERT/UPDATE/DELETE），应用到订阅端数据库
+6. `application origin`记录复制进度，确保订阅端重启后能从正确位置继续，避免重复或遗漏
+7. `table sync worker`负责全量初始数据的拷贝，完成后由`apply worker`接管增量同步
+
+![img](/images/blog/2026-08-11-pg-logical-replication-future/1.png)
+
+### 历史演进
+
+自PostgreSQL 10以来，逻辑复制每年都有新功能加入：
+
+- **DDL扩展**：发布端和订阅端的SQL命令持续增强易用性
+- **WAL预取**：提升日志读取性能
+- **Streaming模式**：支持大事务实时传输，无需等待事务结束即可边读边传
+- **Row Filter**：支持按行过滤，只复制满足条件的数据
+- **Sequence同步**：引入`sequence sync worker`复制序列数据
+- **冲突检测**：为双向复制场景提供基础
+
+尽管如此，逻辑复制仍存在两个明显的潜力空间：**多主一致性**和**性能**。目前逻辑复制虽支持多节点同时写入且无回环问题，但双向写入时的数据冲突无法自动处理；性能方面，逻辑复制比物理复制慢一个数量级以上，单进程Apply Worker在高并发写入下延迟持续增大。
+
+以下三个新功能正是针对这些痛点设计的。
+
+
+## 多主冲突检测与自动解决
+
+### 冲突的产生
+
+在多主写入场景下，若两个节点同时修改同一行数据，会产生冲突。以下图为例：发布端插入`(1, R)`，订阅端同时插入`(1, B)`，主键均为1。当发布端的修改到达订阅端时，发现主键已存在，Apply Worker报错停止，逻辑复制中断。
+
+![img](/images/blog/2026-08-11-pg-logical-replication-future/2.png)
+
+### 可检测的冲突类型
+
+PostgreSQL目前已能在日志中识别以下冲突类型：
+
+| 冲突类型 | 说明 |
+|---------|------|
+| `insert_exists` | 插入的行违反不可延迟的唯一约束（主键冲突） |
+| `update_origin_differs` | 待更新的行之前被其他来源修改过 |
+| `update_deleted` | 待更新的元组已被其他来源并发删除 |
+
+日志会输出类似信息：
+```
+ERROR: conflict detected on relation "public.test": conflict=insert_exists
+DETAIL: Could not apply remote change: remote row (1, 'remote'). 
+Key already exists in unique index "test_pkey"
+```
+
+### 现有的手动解决方法
+
+当前PostgreSQL提供了几种手动处理冲突的方式：
+
+**方法一：disable_on_error**
+订阅端设置此选项后，发生冲突时订阅端会停止而非持续报错，给用户介入分析的机会。
+
+**方法二：SKIP LSN**
+```sql
+ALTER SUBSCRIPTION mysub SKIP (lsn = '0/1566D10');
+```
+跳过指定LSN对应的事务，但会丢失该事务的数据，需手动恢复。
+
+**方法三：自定义Trigger**
+用户自行编写Trigger，在Apply Worker写入前判断并处理冲突。
+```sql
+CREATE TRIGGER trg_ignore_duplicate_insert BEFORE INSERT ON my_table
+FOR EACH ROW EXECUTE FUNCTION ignore_duplicate_insert();
+ALTER TABLE my_table ENABLE REPLICA TRIGGER ignore_duplicate_insert;
+```
+
+**方法四：Advance Origin**
+通过`pg_replication_origin_advance`向前推进复制进度，跳过部分日志，同样会丢失数据。
+
+### 未来的自动化方案
+
+**冲突日志表**
+新增系统表专门存储冲突历史数据，用户可直接通过SQL查询获取冲突的元组、事务类型等信息，无需自行解析日志。
+
+![img](/images/blog/2026-08-11-pg-logical-replication-future/3.png)
+
+**自动冲突解决策略**
+在创建或修改订阅时指定冲突解决策略：
+```sql
+CREATE SUBSCRIPTION mysub CONNECTION '...' PUBLICATION mypub 
+CONFLICT RESOLVER (insert_exists = apply_remote, ...);
+
+ALTER SUBSCRIPTION mysub CONFLICT RESOLVER (insert_exists = skip, ...);
+```
+
+内置的冲突解决方法包括：
+
+| 解决策略 | 行为 |
+|---------|------|
+| `apply_remote` | 优先应用发布端修改（如删除订阅端冲突行后插入新数据） |
+| `skip` | 仅跳过冲突的行修改，事务其他部分正常应用 |
+| `error` | 遇到冲突直接报错 |
+| `last_update_win` | 应用时间戳最新的修改，保持最终一致性 |
+
+**死元组保留**
+为正确检测`update_deleted`等冲突，需确保被删除的元组在冲突检测完成前不被Vacuum清理。新增订阅选项`retain_dead_tuples`可动态保留死元组，在确认不再需要后允许回收。
+
+
+## 并行复制
+
+### 性能瓶颈
+
+逻辑复制在订阅端默认只有一个`apply worker`进程。在发布端有大量客户端并发写入时，单进程无法及时处理所有变更，复制延迟持续增大，这是逻辑复制性能远低于物理复制的核心原因。
+
+### 现有方法的局限
+
+**Streaming Parallel（PG 16+）**：仅对未提交的大事务有效，对小事务无优化，不适用于普通场景。
+
+**多订阅端划分**：按表划分时，外键关联的两张表复制顺序无法保证，可能导致数据不一致；按行划分时，提交顺序无法与发布端保持一致。
+
+### 新方案设计
+
+为每个事务独立开启进程进行并行应用，核心机制如下：
+
+**依赖检测**：Leader Worker在分发变更时计算事务间的依赖关系。如果两个事务修改了同一行或可能破坏唯一约束，则认为存在依赖，后一个事务需等待前一个完成后再执行。
+
+**提交顺序保证**：即使事务间无数据依赖，提交阶段仍需严格遵循发布端的提交顺序，确保数据一致性。
+
+**性能数据**：基准测试显示，增加Worker数量可提升约3倍的复制吞吐量。受限于提交顺序协调的开销，性能提升有上限，但已能显著改善高并发场景下的延迟问题。
+
+![img](/images/blog/2026-08-11-pg-logical-replication-future/4.png)
+
+![img](/images/blog/2026-08-11-pg-logical-replication-future/5.png)
+
+
+## 集中式逻辑解码
+
+### 问题：重复解码
+
+在多订阅端场景下，每个订阅端对应一个独立的WALSender进程，每个进程都要对相同的WAL日志进行独立的逻辑解码。这种重复解码造成：
+
+- CPU开销随订阅数线性增长
+- 解码工作重复执行，扩展性差
+- 延迟升高，高写入负载下问题加剧
+
+### 解决方案
+
+引入专用进程统一解码WAL日志，解码结果在所有WALSender之间共享复用。每个订阅端直接消费已解码的数据，无需重复解析。这本质上是一种Pipeline化的处理机制，将解码从N次降为1次。
+
+![img](/images/blog/2026-08-11-pg-logical-replication-future/6.png)
+
+
+## 总结
+
+本文介绍了PostgreSQL逻辑复制未来演进中的三个核心方向：
+
+1. **多主冲突检测与自动解决**：通过冲突日志表和可配置的自动解决策略，将当前需要手工介入的冲突处理流程化、自动化，提升多主架构的可用性。
+
+2. **并行复制**：通过依赖感知的事务分发和提交顺序保证，突破单进程Apply Worker的性能天花板，实测可提升约3倍吞吐量。
+
+3. **集中式解码**：消除多订阅端场景下的重复解码开销，将解码次数从O(n)降为O(1)。
+
+上述功能预计将在PostgreSQL 20、PostgreSQL 21或PostgreSQL 22版本中陆续实装。此外，除了技术演进，苹果公司近期也已决定组建团队并投入资源参与社区开发，成为继微软、亚马逊、谷歌之后又一家反哺PostgreSQL社区的国际大厂，这对整个生态的发展是积极的信号。

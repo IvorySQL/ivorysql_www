@@ -1,0 +1,98 @@
+---
+slug: pg-incremental-checkpoint
+title: "The “Dilemma” and “Difficulty” of Incremental Checkpoints"
+author: "Lyu Haibo"
+category: PostgreSQL
+image: "/images/blog/covers/pg-incremental-checkpoint.png"
+tags: [Incremental Checkpoint, Full Page Write, PostgreSQL, Partial Write, Spinlock]
+description: "Incremental checkpoints in PostgreSQL's shared-storage cluster face two hard problems: ckptq spinlock contention storms and the coupling with full-page writes."
+---
+
+> This article is based on Lyu Haibo's (Chief Researcher at 易景科技 (Yijing Technology), PG ACE Director, Enterprise Mentor at Peking University) presentation at HOW 2026.
+
+## 1. Why Incremental Checkpoints Were Introduced
+
+While developing a shared-storage cluster architecture based on PostgreSQL (similar to Oracle RAC), a real-world problem surfaced: when PG's original full checkpoint mechanism was used unchanged, dirty pages kept accumulating across the nodes, so performance under stress testing could never improve. To solve this problem, we introduced incremental checkpoints.
+
+![img](/images/blog/2026-07-28-pg-incremental-checkpoint/1.png)
+
+The core idea of incremental checkpoints is not complicated: add a checkpoint queue (ckptq) in shared memory that orders all dirty blocks by the order in which they became dirty, and then periodically flush dirty pages along the queue in small batches at high frequency. Compared with a full checkpoint, which traverses all dirty pages in one pass, this approach can theoretically control I/O load more smoothly.
+
+But when it came to actually implementing it, two key problems proved trickier than expected: first, the mechanism for managing the ckptq shared-memory lock, and second, the coupling between incremental checkpoints and FPW (full-page write). Each is examined in detail below.
+
+## 2. Managing the ckptq Shared-Memory Lock: The Hidden Cost of Spinlock Contention
+
+Because ckptq lives in shared memory, multiple processes concurrently marking blocks dirty inevitably involves lock management. Initially we used PG's built-in SpinLock, but under high-contention scenarios it exposed severe performance problems.
+
+### 2.1 The Essence of Spinlocks
+
+A spinlock is essentially just a memory variable — 1 byte, 2 bytes, 4 bytes, or 8 bytes. When process A holds the lock, it changes the value from 0 to 1; when process B sees that the value is not 0, it keeps looping and checking until the value returns to 0. The purpose of this "busy wait" is to avoid yielding the CPU, thereby avoiding context switches and cache pollution.
+
+The problem: when multiple processes compete for the same spinlock at the same time, the consequences go far beyond idle CPU spinning.
+
+### 2.2 The CPU Inter-Core Communication Storm
+
+Suppose there are 16 cores: Core 0 holds the lock while the other 15 cores spin and wait. When Core 0 is about to release the lock (changing it from 1 to 0), the following chain reaction occurs:
+
+1. Core 0 must broadcast **Invalidate messages** to the other 15 cores, notifying them that their copies of the lock variable in their L1/L2 caches are invalid.
+2. Only after all cores acknowledge can Core 0 modify the variable to 0.
+3. The 15 waiting cores immediately send **Write Update messages** to Core 0, requesting the latest value of the variable.
+4. After arbitration inside the CPU, some core (e.g., Core 9) obtains the right to modify it, and then broadcasts **Write Invalidate messages** to the other 15 cores.
+5. Once all cores acknowledge, Core 9 changes the variable to 1 and holds the lock.
+
+A single round of lock release and re-acquisition involves dozens of inter-core message broadcasts. If this is already the case at the scale of 16 cores, on modern CPUs that routinely have dozens or even over a hundred cores, the overhead is amplified dramatically. **Round after round of message synchronization is enough to "degrade" the performance of an i9 to the level of a 386.** This is the so-called "lock storm" — the blocking caused by contention over a hot spot is further aggravated by inter-core communication latency.
+
+This problem is not unique to incremental checkpoints. Anywhere in PG that uses spinlocks, contention can trigger the same inter-core communication storm and cause performance jitter.
+
+### 2.3 Ideas for Improvement
+
+The inspiration for the solution actually comes from the CPU's own cache coherence protocol and Oracle RAC's cache fusion mechanism. The core idea is simple: allocate an independent lock variable to each core; when spinning, each core only polls its own variable without interfering with the others, so no broadcast messages are needed.
+
+When releasing the lock, the holder only needs to send a single modification message to the private variable of the target core that is acquiring the lock, completing the ownership transfer. This reduces inter-core communication from O(n²) down to O(1). For related academic research, see the paper *Non-scalable locks are dangerous* — the scalability problems of traditional spinlocks on large-scale many-core systems were established long ago; they are just easy to overlook in practice.
+
+## 3. Incremental Checkpoints and FPW: A Measured Comparison of the Partial-Write Problem
+
+In PG, full checkpoints and FPW are tightly coupled. Once incremental checkpoints are introduced, the frequency of full checkpoints is greatly reduced — so what impact does this have on FPW's ability to protect against partial writes? To answer that question, we first need to understand exactly what problem FPW solves, and how other databases handle it.
+
+### 3.1 What Is a Partial Page Write?
+
+A database page (e.g., PG's 8KB page) is usually made up of multiple OS pages (e.g., 4KB) at the operating-system level. When the database issues an 8KB write operation, at the storage layer it is actually two 4KB writes. If power is cut or the system crashes in the middle of the write, it can happen that the first 4KB is written successfully while the second 4KB is not — the database page then ends up in a corrupted "half-new, half-old" state. This is a **partial page write**.
+
+### 3.2 How to Simulate Partial Writes
+
+For a long time, the partial-write problem was difficult to verify, because in real scenarios it can hardly be reproduced without pulling the power plug. However, with kernel dynamic tracing tools such as eBPF/systemtap, one can intercept the `pwrite` system call and tamper with the write-length parameter, changing it from 8KB to 4KB; the operating system will then obediently write only half — a perfect simulation of a partial write that completely rules out other interfering factors.
+
+We ran the same test on Oracle, PostgreSQL, and MySQL respectively.
+
+### 3.3 Oracle: No Handling at the Software Level
+
+After intercepting `pwrite`, Oracle detected the I/O error while flushing dirty pages at checkpoint time and crashed outright. After restart, it began instance recovery, located the checkpoint position, and identified the dirty blocks that needed recovery — and then recovery failed.
+
+The test conclusion is clear: Oracle does not solve the partial-write problem at the software level. It neither relies on atomic writes from the file system nor does anything special in its code. Oracle's strategy is to detect the corruption and then rely on backups for media recovery, and it provides the BlockRecover tool for single-block recovery. **Handing the problem off to operations is itself a choice.**
+
+### 3.4 PostgreSQL: Completely Solved
+
+Under the same procedure, PG did not crash after the I/O error — it merely reported the error. We simulated an unexpected outage by killing all processes with `kill -9`, and after restart PG read the checkpoint position from the control file and applied the corresponding WAL logs — the data was fully recovered, with nothing lost.
+
+**Through the FPW mechanism, PG writes the entire page into the WAL the first time a dirty page is modified, ensuring that even if a partial write occurs, the page can be completely redone from the log.** The cost is obvious I/O amplification, but in exchange it buys certainty of data consistency.
+
+### 3.5 MySQL (InnoDB): The Limitations of Doublewrite
+
+MySQL InnoDB uses the doublewrite mechanism: the page is first written to the doublewrite buffer, and only then to the actual data file. The tests found:
+
+- If only writes to the target table file are intercepted, doublewrite can recover.
+- But if writes to the system tablespace (such as the undo tablespace) are intercepted, **the database reports an error at startup and cannot recover**.
+
+The conclusion: **doublewrite solves the partial-write problem in some scenarios, but is helpless when the system tablespace is damaged.** In a real scenario of "power loss plus truncated writes to the system tablespace," doublewrite cannot guarantee that the database will come up at all.
+
+### 3.6 Summary: Comparing the Three Databases
+
+| Database | Approach | Does it truly solve partial writes? |
+|----------|----------|-------------------------------------|
+| Oracle | Relies on backups and block recovery | Not solved at the software layer |
+| MySQL | Double Write | Partially solved; ineffective when the system tablespace is corrupted |
+| PostgreSQL | Full Page Write | Completely solved, at a performance cost |
+
+Among the three mainstream databases, **only PG truly solves the partial-write problem at the software level, at the cost of performance.** Oracle pushes the problem onto hardware/operations, and MySQL's doublewrite has a blind spot on the critical path.
+
+Back to the actual situation of the TC architecture: the underlying self-developed shared storage supports atomic writes, so FPW can be turned off in TC. But if a user does not have atomic-write storage, is FPW really dispensable? There is no single standard answer to this question. For those who are interested, feel free to follow the steps in this talk to actually simulate a partial write, gain a deeper understanding of the underlying principles, and only then draw your own conclusion.

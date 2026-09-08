@@ -1,0 +1,236 @@
+---
+slug: pg-plan-intervention-cost
+title: "The Cost-Comparison Revolution: A Deep Dive into Enhanced PostgreSQL Execution Plan Intervention"
+author: "Nickyoung"
+category: PostgreSQL
+image: "/images/blog/covers/pg-plan-intervention-cost.png"
+tags: [PostgreSQL, PG18, Execution Plan, disable_nodes, Cost Estimation, HINT]
+description: "How a 1% fuzzy cost comparison silently broke LIMIT and HINT behavior, and how PG 18's new disable_nodes mechanism makes execution plan intervention precise and reliable."
+---
+
+> This article is based on Nickyoung's (PostgreSQL ACE) presentation at HOW 2026.
+
+## Preface
+
+In the day-to-day operations of database systems, a SQL execution plan "going off course" is one of the most vexing problems for DBAs. A single SQL statement executes in no time without LIMIT, yet adding LIMIT makes it thousands of times slower; an index is explicitly specified via HINT, yet the optimizer turns a deaf ear and performs a sequential scan. What mechanisms exactly lie hidden behind these seemingly "dumbed-down" behaviors?
+
+This article is based on the featured presentation at HOW 2026, the Open Source Ecosystem Conference & PostgreSQL Summit Forum. It systematically dissects the core logic of cost comparison and path selection in the PostgreSQL optimizer, interprets the major revolution of PG 18's path-disabling mechanism, and looks ahead to the future direction of AI-driven automatic execution plan optimization.
+
+## 1. At the Crime Scene: Two "Cold Cases"
+
+### 1.1 Cold Case 1: LIMIT Is Actually Slower
+
+In PostgreSQL, a counterintuitive phenomenon sometimes appears: a query with LIMIT takes longer to execute than the same query without LIMIT.
+
+![img](/images/blog/2026-09-07-pg-plan-intervention-cost/1.png)
+
+In one real scenario, the query without LIMIT took only **0.1 milliseconds** to execute, while the query with LIMIT took **more than 3 seconds** — a gap of tens of thousands of times.
+
+The root cause: PostgreSQL's LIMIT operator does not fully account for the real data distribution. In the cost estimation stage it picks the wrong index, causing the time spent fetching rows back from the table to increase dramatically.
+
+### 1.2 Cold Case 2: When the HINT "Fails"
+
+In PG 17 and earlier versions, using the pg_hint_plan extension to specify an index produced a baffling phenomenon — even though the HINT asked for an index scan, the execution plan still went with a parallel sequential scan.
+
+```sql
+/* Specify that a particular index should be used via HINT */
+/*+ IndexScan(tbl tbl_name_idx) */
+SELECT ... FROM tbl WHERE name = 'xxx';
+```
+
+The execution result showed a **parallel sequential scan**, as if the HINT had been completely ignored.
+
+The root of this problem starts with the cost comparison mechanism of the PG optimizer.
+
+## 2. Hunting the Culprit in the Source Code: The 1% "Fuzzy Cost Comparison"
+
+### 2.1 The Misconception About the Optimizer's Decision Process
+
+Before analyzing the specific problems, we first need to correct a common misconception about CBO (Cost-Based Optimizer).
+
+Many people believe that the optimizer generates all possible execution paths, then compares their final total costs and picks the path with the lowest cost as the optimal execution plan.
+
+**But that is not actually the case.**
+
+In PG, path generation and elimination proceed **layer by layer**. In the `add_path()` function, a newly generated path is compared against the existing paths; a path with no significant advantage is **eliminated immediately**, rather than waiting until all paths have been generated to make a decision.
+
+![img](/images/blog/2026-09-07-pg-plan-intervention-cost/2.png)
+
+### 2.2 The Culprit Behind the Scenes: The 1% Fuzzy Comparison Coefficient
+
+The PG optimizer contains a fuzzy comparison coefficient named `COST_EPSILON`, whose default value is **1%**.
+
+Its core logic: when the difference in **total cost** between two paths is within 1%, the optimizer considers the two paths to have "equal cost." In that case it goes on to compare their **startup costs** and picks the path with the smaller startup cost.
+
+Back to the case where the HINT failed:
+
+![img](/images/blog/2026-09-07-pg-plan-intervention-cost/3.png)
+
+When a HINT specifies an index scan, the pg_hint_plan extension "penalizes" the other paths by setting a huge `disable_cost` value (at the scale of 10 billion, defined as `DBL_MAX/100000.0`), in an attempt to make the target path win the cost comparison.
+
+However, once a huge constant is added to the cost of every path, the original cost differences get **compressed** into the 1% fuzzy interval. Unable to tell which path is better, the optimizer turns to comparing startup costs instead and may ultimately select an unintended path — for example, a parallel sequential scan.
+
+This is the fundamental reason why HINTs "fail" under extreme cost deviations.
+
+### 2.3 Another Cold Case: 244 Seconds vs 287 Milliseconds
+
+Let's look at another typical case.
+
+For a query involving joins to foreign tables, the optimizer chose a **Nest Loop Join** by default, and execution took as long as **244 seconds**.
+
+After forcibly disabling Nest Loop with `SET enable_nestloop TO OFF`, the optimizer chose a **Hash Join**, and execution time plummeted to **287 milliseconds** — a difference of nearly a thousand times.
+
+![img](/images/blog/2026-09-07-pg-plan-intervention-cost/4.png)
+
+Further analysis of the execution plans revealed:
+
+| Path | Total Cost | Startup Cost | Execution Time |
+|------|-----------|--------------|---------|
+| Nest Loop | 232.45 | 200.00 | 244 s |
+| Hash Join | 232.44 | 216.13 | 287 ms |
+
+Look closely at the Total Cost: 232.45 vs 232.44 — a difference of only **0.01**, about **1/23200 ≈ 0.004%** of the total cost, far smaller than the 1% threshold.
+
+The difference in total cost between the two paths is within 1%, so the optimizer treats them as "equal." It then compares startup costs: Nest Loop's startup cost is 200, while Hash Join's is 216.13 — Nest Loop wins.
+
+As a result, the Hash Join path is eliminated outright in the `add_path()` stage and never makes it into the final candidate set of paths.
+
+**This is the tragedy of being "wrongly killed" by the 1% fuzzy comparison.**
+
+### 2.4 Why 1%?
+
+PG cost values are usually kept to two decimal places (hundredths). The smallest representable cost difference is 0.01.
+
+Suppose two paths have total costs around 100; a difference of 0.01 corresponds to roughly **0.01%**. The 1% threshold exists to avoid indeterminate judgments caused by floating-point rounding errors — when the difference is below 1%, the optimizer considers the paths "equivalent" within statistical error and turns to comparing other dimensions (such as startup cost).
+
+The problem is that **real execution performance differences are not proportional to the percentage differences in the optimizer's cost estimates.**
+
+232.44 and 232.45 differ by only 0.01, yet the actual execution times differ by nearly a thousand times — fully exposing the gap between the optimizer's cost model and actual execution.
+
+## 3. Reshaping the Rules: PG 18's Revolutionary Change
+
+### 3.1 From "Marking Up" to "Disabling"
+
+In response to the problems above, PG 18 introduces a major improvement — the path-disabling mechanism.
+
+This improvement was led and committed by Robert Haas (a member of the community Core Team) and was already merged in the first release of PG 18. Chinese contributors such as Richard Guo also participated in the related discussion.
+
+**Old logic (PG 17 and earlier):**
+
+- Add a huge `disable_cost` value to "penalize" the non-target paths
+- Drawback: the huge constant compresses the cost differences between paths, causing the fuzzy comparison to fail
+
+**New logic (PG 18+):**
+
+- Add an integer variable `disable_nodes` to the `Path` structure
+- Completely remove the `disable_cost` logic
+- `disable_nodes` holds **veto power** in path comparison
+
+### 3.2 How the Disabled-Node Count (disable_nodes) Propagates
+
+`disable_nodes` is an integer counter that follows the principle of **accumulating and propagating layer by layer**:
+
+1. **Scan layer**: when `SET enable_seqscan TO OFF`, the `disable_nodes` of the sequential-scan path changes from the default 0 to 1
+2. **Join layer**: the `disable_nodes` value propagates upward layer by layer, **accumulating incrementally**
+3. **Path comparison**: the optimizer compares the `disable_nodes` values first — **the smaller, the better**
+4. **Veto power**: if one path's `disable_nodes` is greater than another's, it is eliminated outright and costs are no longer compared
+
+```sql
+-- Disable sequential scan
+SET enable_seqscan = OFF;
+-- The corresponding path's disable_nodes = 1
+
+-- Disable Nest Loop
+SET enable_nestloop = OFF;
+-- The corresponding path's disable_nodes = 1
+
+-- If a path uses both a sequential scan and a Nest Loop
+-- its disable_nodes = 1 (scan layer) + 1 (join layer) = 2
+-- It will be preferentially eliminated in path comparison
+```
+
+### 3.3 The New Path Comparison Logic
+
+In the `compare_path_costs_fuzzily()` function, the order of comparison has changed:
+
+**Old logic (PG 17 and earlier):**
+
+1. Compare Total Cost (1% fuzzy)
+2. Compare Startup Cost
+
+**New logic (PG 18+):**
+
+1. **Compare disable_nodes first** (veto power)
+2. If disable_nodes are the same, compare Total Cost (1% fuzzy)
+3. If Total Cost is close, compare Startup Cost
+
+![img](/images/blog/2026-09-07-pg-plan-intervention-cost/5.png)
+
+### 3.4 Verifying the Effect
+
+In PG 18, with the same HINT specifying an index scan:
+
+```sql
+/*+ IndexScan(tbl tbl_name_idx) */
+SELECT ... FROM tbl WHERE name = 'xxx';
+```
+
+The execution plan precisely follows the specified index, and execution time drops from over 3 seconds to **0.1 milliseconds**.
+
+The execution plan shows a `Disabled Nodes = true` marker, clearly indicating which paths have been disabled. Cost values are no longer distorted by the huge constant and return to a normal range.
+
+![img](/images/blog/2026-09-07-pg-plan-intervention-cost/6.png)
+
+### 3.5 Summary of the Core Improvements
+
+| Dimension | PG 17 and earlier | PG 18+ |
+|------|------------|--------|
+| Core mechanism | disable_cost (blunt markup) | disable_nodes (precise disabling) |
+| Comparison priority | Total Cost → Startup Cost | **disable_nodes → Total Cost → Startup Cost** |
+| HINT success rate | Fails under extreme costs | **100% precise hits** |
+| Cost distortion | Huge constants distort the fuzzy comparison | **No distortion, fully isolated** |
+| Manual intervention | Occasionally unreliable | **Hits exactly where you point** |
+
+## 4. The Future Blueprint: AI-Driven Automatic Execution Plan Optimization
+
+### 4.1 The Root Causes of Optimizer Cost Deviation
+
+Even with PG 18's precise disabling mechanism, the optimizer's own cost-estimation deviation still objectively exists. The main root causes of the deviation include:
+
+- **Static statistics**: statistics based on historical sampling cannot fully reflect the dynamic characteristics of real data
+- **Information lag**: there is a delay in collecting statistics
+- **Uniform-distribution assumption**: the optimizer assumes that data are uniformly distributed, which often does not match the actual data distribution
+- **Ignoring system load**: cost estimation completely ignores the current system load (such as Load Average), so under high load it may still choose a parallel plan and cause the system to crash
+
+### 4.2 The Learned Optimizer
+
+Traditional CBO is facing challenges from, and supplementation by, the AI direction — the **learned optimizer** has emerged in response.
+
+Its core idea: use machine learning/reinforcement learning techniques, with HINTs as the intervention means, to continuously collect execution feedback and automatically learn the optimal execution plan under different loads.
+
+Experimental tests (based on the Babylon test set) show:
+
+- During the initial learning/exploration phase, the model's latency fluctuates somewhat
+- After training is complete, the latency curve is significantly lower than the baseline of the native PG optimizer (the blue curve)
+- The effect has been preliminarily verified on PG 18
+
+### 4.3 Drawing on the Approach of Oracle SPM
+
+Looking further ahead, the governance of database execution plans should move toward a direction similar to **Oracle SPM (SQL Plan Management)**:
+
+1. **Plan capture**: automatically identify high-frequency or critical SQL statements
+2. **Plan analysis**: vectorize execution plans and combine with AI for similarity analysis and performance evaluation
+3. **Feedback loop**: continuously adjust the plan-selection strategy based on actual execution times (including system-load factors)
+4. **Automatic evolution**: let the optimizer, on the same machine and under the same load conditions, automatically select better execution plans through continuous learning
+
+This is not about replacing the traditional CBO optimizer, but about **adding an AI-assisted decision-making layer on top of CBO**. When the optimizer's cost estimates deviate from actual execution, the AI layer can intervene and "steer the execution plan back on course" through the HINT mechanism. The two complement each other — CBO is responsible for fast path generation and basic cost estimation, while the AI layer is responsible for precise corrections when the cost model misfires — together building a smarter and more robust execution plan management system.
+
+## Conclusion
+
+The `disable_nodes` disabled-node mechanism introduced in PostgreSQL 18 is a **qualitative leap** in execution plan intervention capability. It fundamentally solves the problem of HINT failures caused by the old `disable_cost` blunt-markup model, allowing DBAs and developers to **control execution plans precisely and reliably**.
+
+The significance of this improvement goes far beyond the technical level — it means PG has taken a critical step toward determinism in execution plan governance, providing solid infrastructure for solving performance problems caused by optimizer cost deviation.
+
+At the same time, AI-driven learned optimizers are opening up new possibilities for the future. In the not-too-distant future, databases may be able to **learn and optimize automatically**, overlaying an AI-assisted decision-making layer on top of CBO, so that execution plan selection can both inherit CBO's efficient path-generation capability and be precisely corrected through the AI layer, achieving true "intelligent optimization."
+
+At that point, the focus of DBA work will shift from "passive firefighting" to "proactive governance" — yet another paradigm shift in database operations.

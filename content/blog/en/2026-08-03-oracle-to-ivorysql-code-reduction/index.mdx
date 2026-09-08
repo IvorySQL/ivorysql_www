@@ -1,0 +1,388 @@
+---
+slug: oracle-to-ivorysql-code-reduction
+title: "Migrating from Oracle to IvorySQL: How Much Code Do You Really Save? A Hands-On Test"
+author: "Shi Jiawei"
+category: IvorySQL
+image: "/images/blog/covers/oracle-to-ivorysql-code-reduction.png"
+tags: [Oracle, IvorySQL, PostgreSQL, Migration, Compatibility, PL/SQL]
+description: "A hands-on comparison of Oracle 19c, PostgreSQL 18, and IvorySQL 5.4 on one server — from Oracle syntax, Packages, and transfer transactions to client connectivity — measuring how much migration code really saves."
+---
+
+> Author: Shi Jiawei, 12 years of database industry experience, Oracle ACE Pro, PostgreSQL ACE, OCM/PGCM/KCM certified. Member of the IvorySQL Expert Advisory Committee; KVA; 崖山 YVP; KWDB MVP; technical advisor to the PolarDB open-source community and HaloDB; TiDB community technical evangelist; expert advisor to the 青学会 MOP technical community. WeChat public account: 《Digital Observer》
+
+Once a de-O (migrating off Oracle) project enters the implementation phase, the questions teams ask become very specific: Will the existing SQL still run? How much PL/SQL has to change? Do we need to switch the client? Will transaction semantics change?
+
+Documentation may say "highly compatible with Oracle," but when it comes down to these four questions, it usually can't give a clear answer.
+
+So I simply installed Oracle 19c, PostgreSQL 18, and IvorySQL 5.4 together on one Linux 8 machine and ran the same set of business scenarios against each of them.
+
+A note: no TPS or QPS measurements at all. The three databases differ in parameters, memory allocation, and storage layout, so any numbers produced would not be comparable and would only mislead. This time we look only at Oracle syntax, Packages, transfer transactions, client connectivity, and day-to-day operations.
+
+## 1. Test Environment
+
+The three databases run on the same Linux server.
+
+| Item        | Configuration                                       |
+| ----------- | -------------------------------------------------- |
+| OS          | Oracle Linux Server 8.10                           |
+| CPU         | 4 cores                                            |
+| Memory      | 23 GiB                                             |
+| Oracle      | 19c Enterprise Edition 19.3.0.0.0                  |
+| Oracle instance | orcl, non-CDB, READ WRITE                      |
+| PostgreSQL  | 18.4, official PGDG RPM                            |
+| IvorySQL    | 5.4, based on PostgreSQL 18.4                      |
+| Character set | Oracle: AL32UTF8; PostgreSQL and IvorySQL: UTF8  |
+
+| Database        | Port  | Description                          |
+| -------------   | ----: | ------------------------------------ |
+| Oracle 19c      |  1521 | Oracle Listener                      |
+| IvorySQL 5.4    |  5432 | PostgreSQL protocol connections      |
+| IvorySQL 5.4    |  1522 | Dedicated ivorysql.port listener     |
+| PostgreSQL 18   | 55432 | Test instance bound to 127.0.0.1 only|
+
+All three services are managed by systemd. IvorySQL runs under the ivorysql user, with its data directory at /var/lib/ivorysql/5.4/data and page checksums enabled.
+
+## 2. Conclusions First
+
+IvorySQL 5.4's Oracle compatibility is clearly higher than that of native PostgreSQL. NUMBER, VARCHAR2, empty-string-to-NULL, DUAL, NVL, DECODE, SYSDATE, sequence .NEXTVAL, PL/iSQL and Packages — all passed this time.
+
+| Test item                    | Oracle 19c | IvorySQL 5.4 | PostgreSQL 18  |
+| -------------------------- | ---------- | ------------ | -------------- |
+| Empty string treated as NULL | Passed   | Passed       | Different semantics |
+| NVL, DECODE, DUAL, SYSDATE   | Passed   | Passed       | Needs rewriting |
+| NUMBER, VARCHAR2             | Passed   | Passed       | Needs rewriting |
+| sequence.NEXTVAL             | Passed   | Passed       | Needs rewriting |
+| Oracle Package               | Passed   | Passed       | Packages not supported |
+| CONNECT BY                   | Passed   | Failed       | Failed         |
+| ROWNUM                       | Passed   | Failed       | Failed         |
+
+At the data type, function, and Package level, IvorySQL can save a considerable portion of the first-round rework. But CONNECT BY, ROWNUM, the client protocol, and enterprise-class capabilities still need separate evaluation.
+
+## 3. Installation Experience: Like PostgreSQL, but Watch Out for the Dual Ports
+
+IvorySQL 5.4 officially provides x86_64 RPMs. After installation, the software directory is /usr/ivory-5, and the core commands are still the same old friends: initdb, pg_ctl, psql, pg_dump, pg_basebackup.
+
+Initializing an Oracle-mode instance:
+
+```bash
+/usr/ivory-5/bin/initdb \
+  -D /var/lib/ivorysql/5.4/data \
+  -U ivorysql \
+  -m oracle \
+  --data-checksums \
+  --encoding=UTF8 \
+  --locale=en_US.utf8 \
+  --auth-local=peer \
+  --auth-host=scram-sha-256
+```
+
+Once initialization completes, start the database with pg_ctl:
+
+```bash
+/usr/ivory-5/bin/pg_ctl \
+  -D /var/lib/ivorysql/5.4/data \
+  -l logfile \
+  start
+```
+
+Output:
+
+```text
+waiting for server to start.... stopped waiting
+pg_ctl: could not start server
+Examine the log output.
+```
+
+The first startup failed. The Oracle Listener occupies 1521, and IvorySQL's ivorysql.port also defaults to 1521; the log reports the port conflict and the process exits.
+
+Change the dedicated port to 1522:
+
+```conf
+ivorysql.listen_addresses = '*'
+ivorysql.port = 1522
+```
+
+The PostgreSQL protocol connection stays on 5432. After the change, both ports listen normally.
+
+If deploying on the same machine as Oracle, check whether 1521 is already taken before installing.
+
+```bash
+lsof -i :1521
+```
+
+## 4. Basic Oracle Semantics Comparison
+
+### 4.1 Empty Strings and NULL
+
+Oracle treats an empty string as NULL, while PostgreSQL considers them two different values. This difference is not just a matter of syntax — it directly affects NOT NULL constraints, condition evaluation, unique indexes, and parameter validation at the application layer.
+
+Test SQL:
+
+```sql
+SELECT CASE
+         WHEN CAST('' AS VARCHAR) IS NULL THEN 'NULL'
+         ELSE 'NOT NULL'
+       END AS empty_string_semantics;
+```
+
+Results:
+
+| Database        | Result     |
+| -------------   | --------   |
+| Oracle 19c      | NULL       |
+| IvorySQL 5.4    | NULL       |
+| PostgreSQL 18   | NOT NULL   |
+
+In the Oracle-mode instance used this time, IvorySQL's ivorysql.enable_emptystring_to_NULL is on. When migrating legacy applications, this single item can save quite a lot of null-handling adaptation at the application layer.
+
+But you cannot afford to be careless. Empty-string-to-NULL conversion itself changes the evaluation outcome of some constraints, so historical data, indexes, and interface parameters still have to be reviewed one by one.
+
+### 4.2 NVL, DECODE, DUAL, and SYSDATE
+
+A few SQL statements written every day in Oracle run through directly on IvorySQL:
+
+```sql
+SELECT NVL(CAST(NULL AS VARCHAR), CAST('fallback' AS VARCHAR));
+SELECT DECODE(2, 1, 'one', 2, 'two', 'other');
+SELECT SYSDATE FROM dual;
+```
+
+IvorySQL returns fallback, two, and the current date respectively. Fed to native PostgreSQL, the same statements report that the NVL function does not exist and the dual table does not exist; they have to be rewritten with `COALESCE`, `CASE`, and `CURRENT_TIMESTAMP`.
+
+There is a pitfall here that is easy to overlook. An IvorySQL session must first enter Oracle compatible mode before statements are parsed with Oracle syntax:
+
+```sql
+SET ivorysql.compatible_mode = oracle;
+```
+
+If a client packs the SET together with the following Oracle SQL into a single protocol message and sends them over, the server may parse the whole batch of statements with its original mode first. So migration tools should set the session mode separately right after the connection is established, and only then send business SQL.
+
+### 4.3 NUMBER, VARCHAR2, and Sequences
+
+The transfer case later uses this table directly:
+
+```sql
+CREATE TABLE account_balance (
+  account_id NUMBER PRIMARY KEY,
+  account_name VARCHAR2(50) NOT NULL,
+  balance NUMBER(18,2) NOT NULL,
+  updated_at DATE DEFAULT SYSDATE NOT NULL
+);
+```
+
+Both Oracle 19c and IvorySQL 5.4 created it successfully. IvorySQL also recognizes Oracle-style sequence access:
+
+```sql
+CREATE SEQUENCE transfer_seq START WITH 1 INCREMENT BY 1;
+SELECT transfer_seq.NEXTVAL FROM dual;
+```
+
+On native PostgreSQL, the types have to be changed to NUMERIC, VARCHAR, and TIMESTAMP, and the sequence call rewritten as:
+
+```sql
+SELECT nextval('transfer_seq');
+```
+
+Even when the types can be matched up, precision, default values, implicit conversions, and date arithmetic still have to be verified item by item.
+
+## 5. The Two That Failed: CONNECT BY and ROWNUM
+
+The hierarchical query uses the most common Oracle form:
+
+```sql
+SELECT LEVEL
+FROM dual
+CONNECT BY LEVEL <= 3;
+```
+
+Oracle 19c returns 1, 2, 3. IvorySQL 5.4 reports an error:
+
+```text
+ERROR: syntax error at or near "BY"
+```
+
+ROWNUM fails as well:
+
+```text
+ERROR: "rownum": invalid identifier
+```
+
+In IvorySQL and PostgreSQL, these two styles of writing can be replaced case by case with recursive CTEs, generate_series, window functions, or FETCH FIRST:
+
+```sql
+SELECT ROW_NUMBER() OVER (ORDER BY value) AS rn, value
+FROM (VALUES (10), (20), (30)) t(value)
+FETCH FIRST 2 ROWS ONLY;
+```
+
+These two are the items most easily missed in a migration assessment. Organization trees, menu trees, region hierarchies, ROWNUM pagination — this kind of SQL is generally not found in table structures; it is scattered through reports, stored procedures, and ORM custom queries. A compatibility scan that only looks at the Schema will never find them. You must count up these two classes of SQL before starting work.
+
+## 6. Core Test: Account Transfer Package
+
+Two accounts were created:
+
+| Account | Name  | Initial balance |
+| ---:    | ----- | -------:        |
+| 1001    | Alice |  1000.00        |
+| 1002    | Bob   |   500.00        |
+
+The transfer procedure does four things: lock the paying account, check the balance, update both balances, and write a transfer log. First transfer 125.50, then submit a transfer of 99999 to verify the exception path.
+
+The Oracle Package interface:
+
+```sql
+CREATE OR REPLACE PACKAGE pkg_transfer AS
+  PROCEDURE transfer(
+    p_from_account NUMBER,
+    p_to_account NUMBER,
+    p_amount NUMBER
+  );
+  FUNCTION balance_of(p_account_id NUMBER) RETURN NUMBER;
+END pkg_transfer;
+/
+```
+
+Inside the Package Body, `SELECT ... FOR UPDATE` locks the paying account, and when the balance is insufficient Oracle calls `raise_application_error`(-20001, 'insufficient balance').
+
+The Package and Package Body used on IvorySQL kept almost the same structure; the main change was to the exception writing, switched to the form supported by PL/iSQL:
+
+```sql
+IF v_from_balance < p_amount THEN
+  RAISE EXCEPTION 'insufficient balance';
+END IF;
+```
+
+The calling style is still package name plus procedure name:
+
+```sql
+CALL pkg_transfer.transfer(1001, 1002, 125.50);
+```
+
+PostgreSQL 18 has no Packages, so the procedures and functions can only be organized in a Schema and rewritten in PL/pgSQL, and the table structure also has to be changed to NUMERIC, VARCHAR, and CURRENT_TIMESTAMP.
+
+The successful transfer results are identical across the three databases:
+
+| Account | Balance after transfer |
+| ---:    | ---------:            |
+| 1001    |     874.50            |
+| 1002    |     625.50            |
+
+Each transfer log generated one SUCCESS record with the amount 125.50. The insufficient-balance transfer threw an exception in every database, with no double deduction, and the two accounts remain at 874.50 and 625.50.
+
+This part best shows where IvorySQL's value lies. In terms of business results, native PostgreSQL can achieve the same thing; the cost is that developers have to rewrite the types, functions, Package organization, and part of the procedural syntax. IvorySQL keeps the Oracle Package structure intact, so for people used to writing PL/SQL, the code reads as familiar and the migration feels safer.
+
+## 7. Verifying Package Scripts via psql -f
+
+An additional verification was run on the Oracle-style Package script. Command executed:
+
+```bash
+PGHOST=127.0.0.1 PGPORT=1521 PGUSER=ivorysql ${IVY_BIN_DIR}/psql -f a.sql
+```
+
+Output:
+
+```text
+CREATE PACKAGE
+CREATE PACKAGE BODY
+```
+
+In the test, psql -f can directly execute Package and Package Body scripts containing the `/` terminator, without the script being truncated prematurely.
+
+## 8. Can SQL\*Plus Connect Directly to IvorySQL?
+
+IvorySQL's configuration has an ivorysql.port, which was set to 1522 this time. I used psql and Oracle 19c's SQL\*Plus respectively to connect to this port.
+
+psql connected:
+
+```text
+PostgreSQL 18.4 (IvorySQL 5.4)
+PSQL_STATUS=0
+```
+
+SQL\*Plus connects like this:
+
+```text
+sqlplus ivorysql/******@//127.0.0.1:1522/ivory_compare
+```
+
+The client returns:
+
+```text
+ORA-12537: TNS:connection closed
+SQLPLUS_STATUS=249
+```
+
+The server logs an entry at the same time:
+
+```text
+invalid length of startup packet
+```
+
+Judging by the actual behavior of this official 5.4 RPM, port 1522 still receives PostgreSQL startup packets and cannot be used as an Oracle TNS listener. Applications that depend on SQL\*Plus, OCI, Oracle JDBC Thin, or fixed TNS connect strings need to have their drivers and connection layer verified separately — changing an IP and port is not enough to get through.
+
+This result directly determines the decision of whether the application has to switch drivers. SQL syntax compatibility and network protocol compatibility are two different things and must be verified separately.
+
+## 9. Operations Experience and Software Footprint
+
+Disk usage of the three software directories:
+
+| Software directory | Usage   |
+| ---------------    | ------: |
+| Oracle 19c Home    | 7.0 GiB |
+| IvorySQL 5.4       | 487 MiB |
+| PostgreSQL 18      |  48 MiB |
+
+These numbers only reflect the contents of the installation packages and have nothing to do with performance. IvorySQL's RPM bundles quite a few extensions, client, and spatial-data components, which is why it is noticeably larger than the base PGDG package.
+
+The operations commands are basically the same as PostgreSQL:
+
+```bash
+systemctl status ivorysql
+/usr/ivory-5/bin/pg_isready -h 127.0.0.1 -p 5432
+/usr/ivory-5/bin/psql -d ivory_compare
+/usr/ivory-5/bin/pg_dump -d ivory_compare
+```
+
+PostgreSQL DBAs can directly carry over their experience with WAL, VACUUM, backup and recovery, and log troubleshooting. Oracle DBAs, on the other hand, need to pick up MVCC, Autovacuum, role privileges, and execution-plan tooling.
+
+Backup strategy, archiving, monitoring, primary/standby, failover, and upgrade drills all still need to be completed item by item in production. This article only tested single-instance functionality; no conclusions are drawn about high availability or disaster recovery.
+
+## 10. How to Choose Among the Three Databases
+
+### Oracle 19c
+
+For core systems that have already made deep use of PL/SQL, RAC, Data Guard, partitioning, auditing, and the commercial toolchain, continuing with Oracle is reasonable. The enterprise features are mature and the vendor provides backing; the cost lies in licensing, skills, and operations.
+
+### PostgreSQL 18
+
+For new systems, cloud-native applications, or teams that are willing to develop in a PostgreSQL-native way, go straight to PG. The ecosystem is mature enough. If migrating from Oracle, the SQL, procedural language, and application drivers need a systematic rewrite — this cost has to be calculated in advance.
+
+### IvorySQL 5.4
+
+For projects that want to enter the PostgreSQL ecosystem but do not want to bear the full Oracle rewrite burden in the first round, IvorySQL is worth a PoC. The following situations deserve priority consideration:
+
+- Business logic makes heavy use of NUMBER, VARCHAR2, NVL, DECODE, sequences, and Packages;
+- The team is familiar with PL/SQL and wants to keep the way procedural code is organized;
+- Oracle is planned to be replaced gradually, and some SQL and client rework is acceptable;
+- An open-source database solution is needed, and the team is willing to invest in building PostgreSQL operations capability.
+
+Conversely, the following situations cannot be decided simply:
+
+- Heavy use of CONNECT BY, ROWNUM, and other Oracle-proprietary SQL;
+- Applications depend strongly on the protocol behavior of SQL\*Plus, OCI, TNS, or Oracle JDBC;
+- Core paths depend on RAC, Data Guard, proprietary diagnostic packs, and complex partitioning;
+- The project requires no changes to SQL, no changes to drivers, and no changes to release scripts.
+
+## 11. My Verdict
+
+In this transfer test, IvorySQL 5.4 passed Oracle data types, sequences, Packages, Package Bodies, SELECT FOR UPDATE row locking, and exception handling, and the final business results were consistent with Oracle 19c and PostgreSQL 18.
+
+Compatibility can reduce the amount of migration rework, but the pre-migration checks cannot be skipped. CONNECT BY, ROWNUM, SQL\*Plus connection modes, and script terminators all need to be scanned item by item. Teams also have to handle object conversion, application driver adaptation, and business regression testing.
+
+When evaluating IvorySQL, I prefer to see it as "a PostgreSQL with an Oracle compatibility layer." Architecture, deployment, and operations follow the PostgreSQL ecosystem, while data types, functions, and PL/SQL syntax lean toward Oracle. Existing Oracle systems can have part of their SQL and stored procedures changed less. Whether a new system adopts it depends on whether the team needs Oracle compatibility and how well the team masters the PostgreSQL technology stack.
+
+Before making a selection, the team should run a PoC with real table structures, core SQL, stored procedures, and concurrent transactions. The transfer case in this article only validates one typical transaction path and cannot represent the migration outcome of the entire system.
+
+**IvorySQL project address:**
+
+https://github.com/IvorySQL/IvorySQL

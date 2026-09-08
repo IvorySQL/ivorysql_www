@@ -1,0 +1,151 @@
+---
+slug: pg-table-rewrite-vacuum-full-repack
+title: "从 VACUUM FULL 到 REPACK：PostgreSQL 表重写技术的进化史"
+author: "付超"
+category: PostgreSQL
+image: "/images/blog/covers/pg-table-rewrite-vacuum-full-repack.png"
+tags: [PostgreSQL, VACUUM FULL, pg_repack, REPACK, PG19, Table Rewriting]
+description: "从 VACUUM FULL 的全表锁死，到 pg_repack 的触发器在线重写，再到 PG19 基于逻辑解码的内核原生 REPACK——三代 PostgreSQL 表重写方案的思路、代价与取舍。"
+---
+> 本文作者：付超，Oracle ACE 与 PostgreSQL ACE 双认证专家，PG 分会西安用户组核心成员。长期从事数据库运维与技术布道工作，具备 Oracle OCM、Kubernetes CKS 等多项专业认证。
+
+每个 DBA 都经历过这样的场景：一张业务大表因为频繁更新，膨胀到实际数据量的好几倍，查询越来越慢。你决定用 `VACUUM FULL` 把它"压缩"回正常体积，却发现命令一执行，这张表的读写全部被锁死——业务侧立刻报警，你只能灰溜溜地挑一个凌晨窗口再跑。
+
+这是 PostgreSQL 表维护里最经典的矛盾：**重写表需要空间上的"大动干戈"，而业务不允许片刻停摆**。围绕这个矛盾，社区和内核团队先后给出了三代解决方案。这篇文章就沿着这条演进线，讲讲 `VACUUM FULL`、`pg_repack` 和 PG19 的 `REPACK` 各自的思路、代价与取舍。
+
+## 一、表为什么要"重写"？
+
+要理解三代方案，先得明白重写（rewrite）和清理（vacuum）是两回事。
+
+PostgreSQL 基于 MVCC 实现多版本并发控制：一条记录被 UPDATE 后，旧版本不会立即删除，而是留在原页面里成为"死元组"，等 VACUUM 来回收。问题在于，**VACUUM 只是把页面内部的死元组标记为可复用，并不会把空间还给操作系统**——页面还在，文件还在，表"瘦"不下来。这就是所谓的"膨胀"（bloat）。
+
+要让表真正瘦身，唯一的办法是**重写**：把表中还活着的行，原样拷贝到一个全新的物理文件中，然后把旧文件整个丢弃。新文件里没有死元组留下的空洞，磁盘空间自然就还给了操作系统。
+
+重写还有一个附加能力：**物理排序**。如果把行按某个索引的顺序写入新文件，那么范围查询时，符合条件的数据会集中在相邻页面，磁盘 IO 大幅减少——这就是"聚簇"（CLUSTER）的价值。
+
+所以三代方案其实都在做同一件事：**重写表**。区别只在于一个核心问题——重写期间，表上的并发变更（插入、更新、删除）怎么处理？
+
+## 二、第一代：锁住一切——VACUUM FULL 与 CLUSTER
+
+最朴素的做法，也是最古老的做法：**重写期间给表加 ACCESS EXCLUSIVE 锁**。
+
+`VACUUM FULL` 把整张表重写到新文件，只回收空间、不排序；`CLUSTER` 在重写的同时按指定索引排好物理顺序。两者的执行期间，其他事务对这张表的一切读写都被阻塞，直到重写完成。
+
+这套方案的优点是无可挑剔的简单：内核自带、零依赖、没有任何前置条件，数据安全上也是最保守的。对于中小表、或者能接受维护窗口的系统，它至今依然是可靠的选择——PG19 也继续保留这两个命令的兼容。实际用起来也很直白：
+
+```sql
+-- 回收表空间（不排序），可指定单表或整库
+VACUUM FULL orders;
+VACUUM FULL;                          -- 当前库所有表
+
+-- 按索引物理排序（聚簇）
+CLUSTER orders USING orders_pkey;
+
+-- 聚簇索引管理：先配置默认聚簇索引，再按它执行，最后刷新统计信息
+ALTER TABLE orders CLUSTER ON orders_pkey;
+CLUSTER orders;
+ANALYZE orders;                       -- 重写后必须刷新统计信息
+```
+
+但它的天花板也很明显：**大表上不可行**。一张 TB 级的表重写可能要几十分钟甚至更久，期间业务完全停摆。在"7×24 小时在线"成为标配的今天，这几乎等于宣判了第一代方案在大表场景下的死刑。社区因此开始思考：能不能让重写"在线"进行？
+
+## 三、第二代：触发器与日志表——pg_repack 的巧劲
+
+既然重写期间业务不可能停下来，那就**让变更"记下来，事后补"**。这是 pg_repack 的核心思路，也是它作为第二代方案的灵魂。这个工具 2011 年从更早的 pg_reorg 项目更名而来，至今迭代到 1.5.3，支持 PostgreSQL 9.5 到 18。
+
+它的执行过程可以讲成一个七步故事：
+
+1. 先建一张"日志表"；
+2. 给原表挂上一个 AFTER 触发器，此后这张表上发生的每一次插入、更新、删除，都会被**同步记进日志表**——这就是它的"增量捕获"机制；
+3. 与此同时，pg_repack 把原表里的全部存活行拷贝到一张新表里（可选按索引或指定列排序）；
+4. 在新表上重建所有索引；
+5. 日志表里已经累积的变更，被一批批"回放"到新表上；
+6. 新表追上进度后，短暂加锁，通过系统目录把新旧表（连同索引和 TOAST 表）**瞬间交换**；
+7. 删掉旧表，收工。
+
+聪明的读者已经看到了关键：**ACCESS EXCLUSIVE 锁只在开头建日志表、结尾换文件这两个瞬间出现**，中间的漫长拷贝阶段只持 SHARE UPDATE EXCLUSIVE 锁——普通 DML 照常执行，只有 DDL 会被挡住。锁窗口从"全程"压缩到了"毫秒级的两头"，这就是在线重写的全部秘密。看一组实际用法：
+
+```bash
+# 安装与启用：二进制编译安装 + 库内扩展（两者版本必须匹配）
+make && sudo make install
+psql -d your_db -c "CREATE EXTENSION pg_repack"
+
+# 在线回收空间（--no-order 即等价 VACUUM FULL）
+pg_repack --no-order -t orders your_db
+
+# 在线聚簇（默认按表已配置的聚簇索引排序）
+pg_repack -t orders your_db
+
+# 按任意列排序重写
+pg_repack --order-by "created_at" -t orders your_db
+
+# 在线搬迁表空间（--moveidx 连索引一起搬）
+pg_repack -d your_db -t orders -s fast_tbs --moveidx
+
+# 先试跑预览再正式执行
+pg_repack -d your_db -N
+```
+
+代价当然也有，而且不小：
+
+- **必须有主键**（或 NOT NULL 唯一索引）。触发器回放变更时需要靠主键定位行，没有主键的表直接被拒之门外；
+- **触发器带来写放大**。重写期间，每一次 DML 都要额外写一条日志表记录，对写入密集的表是不小的负担，极端情况下日志积压甚至会"追不上"（1.5.x 提供了 `--switch-threshold`、`--apply-count` 等参数缓解）；
+- **UNLOGGED 表、临时表不支持**，也不能按 GiST 索引聚簇，声明式分区父表无法整体处理；
+- 作为第三方扩展，它要求客户端二进制与库内扩展**版本严格匹配**，故障后还可能残留临时对象需要手工清理。
+
+即便如此，pg_repack 依然是 PG18 及以下版本做在线重写的事实标准。它的局限也很清晰：**所有能力都建立在"触发器 + 日志表"这个外部机制上**——这像是一套加装的脚手架，能用，但始终不是数据库自己的一部分。
+
+## 四、第三代：内核的逻辑解码方案——REPACK
+
+PG19 带来的 `REPACK`，把这件事从"加装脚手架"变成了"原生能力"。
+
+先说命名。`VACUUM FULL` 和 `CLUSTER` 这两个命令其实做的是同一件事——重写表，但一个名字让人误以为是 VACUUM 的加强版，另一个借用了商业数据库"聚簇"的模糊概念，功能重叠又互相混淆。PG19 干脆把它们统一成一个语义清晰的命令：**REPACK——重写表以回收磁盘空间**。旧命令保留兼容，但新名字承载了新机制。
+
+`REPACK` 的普通模式与第一代无异（全程独占锁），真正亮眼的是 `CONCURRENTLY` 选项——它把 pg_repack 的"增量捕获"机制换成了内核自带的**逻辑解码**：
+
+1. 创建临时逻辑复制槽，开始把表数据（忽略死元组）拷贝到新文件；
+2. 拷贝期间，业务 DML 完全不阻塞，发生的变更通过逻辑解码被**暂存到临时文件**；
+3. 数据拷贝完成后，把暂存的增量变更回放到新文件上；
+4. 此时才请求 ACCESS EXCLUSIVE 锁——只用于交换新旧表与索引文件；
+5. 交换完成，锁释放。
+
+和 pg_repack 相比，最大的变化在于：**不再需要触发器，也就没有 DML 写放大**；锁窗口理论上被压缩到"交换文件"的毫秒级。如果重写期间表的变更量巨大，回放阶段仍会持锁，锁时间可能从毫秒级拉长到分钟级——这是它唯一的"软肋"，但可以通过错峰执行规避。实际用法如下：
+
+```sql
+-- 普通模式（等价 VACUUM FULL）
+REPACK orders;
+
+-- 聚簇（等价 CLUSTER）
+REPACK orders USING INDEX orders_pkey;
+
+-- 无锁重写（生产首选），完成后自动 ANALYZE
+REPACK (CONCURRENTLY, ANALYZE, VERBOSE) orders;
+
+-- 全库：当前用户有 MAINTAIN 权限的所有表（不能在事务块内执行）
+REPACK;
+
+-- 实时查看重写进度与阶段（catch-up = 回放变更，swapping relation files = 锁窗口）
+SELECT pid, relid::regclass AS tbl, command, phase,
+       heap_blks_scanned, heap_blks_total
+FROM pg_stat_progress_repack;
+```
+
+作为内核公民，它带来了一整套配套能力：
+
+- **权限模型**：不再是 superuser/owner 特判，而是标准的 `MAINTAIN` 权限，符合 PG15 以来的细粒度权限体系；
+- **监控内建**：`pg_stat_progress_repack` 视图实时报告进度，且能看到阶段流转——`catch-up`（回放并发变更）、`swapping relation files`（锁窗口）等，锁是否异常一目了然；
+- **参数配套**：`max_repack_replication_slots`（默认 5，仅启动时可调）限定并发 CONCURRENTLY 的数量，每个并发重写占一个逻辑复制槽。
+
+当然，新机制也带来新的边界：CONCURRENTLY 不支持 UNLOGGED 表、分区表、没有主键或索引型 replica identity 的表，也不能在事务块内执行——逻辑解码需要行标识，也需要复制槽，这是机制本身的物理约束。
+
+## 五、给 DBA 的迁移建议
+
+- **PG18 及以下**，没有 REPACK 可选：能停窗就用 `VACUUM FULL`/`CLUSTER`；需要在线就用 pg_repack，前提是表有主键、非 UNLOGGED、重写期间无 DDL。
+- **PG19**，默认切换到 `REPACK (CONCURRENTLY)`：内核原生、无扩展依赖、无触发器开销、监控内建，锁窗口最小。升级后建议先拿一张大表冒烟，对比它和 pg_repack 的耗时与锁时间。
+- **仍要保留 pg_repack 的场景**：表空间在线迁移（`--tablespace`）、按任意列排序（`--order-by`），这两项 REPACK 目前没有等价选项；另外 CONCURRENTLY 要求表已配置 replica identity，未配置的表只能用普通模式。
+- **两边都不支持的**：UNLOGGED 表的在线重写、声明式分区父表的整体在线重写——这类场景只能接受停窗，或对每个叶子分区逐个处理。
+- 别忘了 `max_repack_replication_slots` 只在启动时生效，升级前就要在配置里定好并发预算。
+
+## 结语
+
+回看这条演进线，其实是一个"把重写变成一等公民"的过程：第一代用锁解决并发，简单但粗暴；第二代用触发器把锁窗口挤到两端，却背上了主键约束和写放大；第三代用内核逻辑解码，把在线重写做成了数据库的原生能力。**锁粒度越来越小、能力越来越内建**——这是 PostgreSQL 表维护工具过去十几年的演化主线，也是 REPACK 值得每一个 DBA 在 PG19 升级计划里留一个位置的原因。
