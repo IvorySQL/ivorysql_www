@@ -84,6 +84,10 @@
         "title": "Roadmap",
         "description": "Product roadmap and future plans"
       },
+      "roles": {
+        "title": "Roles & Growth Path",
+        "description": "Community roles, five-level growth path, and governance"
+      },
       "issueTracker": {
         "title": "Issue Tracker",
         "description": "Report bugs and feature requests"
@@ -1079,5 +1083,118 @@
   "HomeMeta": {
     "metaTitle": "IvorySQL - Open Source Oracle Compatible PostgreSQL",
     "metaDescription": "Open Source Oracle compatible PostgreSQL. A creative and powerful database based on PostgreSQL with Oracle compatibility, built for reliability and performance."
+  },
+  "RolesPage": {
+    "metaTitle": "Contributor Growth Path | IvorySQL Community",
+    "metaDescription": "See every role you can take in the IvorySQL community and how the five-level path works, then explore the Technical and Expert Advisory Committees.",
+    "backToHome": "Back to Home",
+    "badge": "Community",
+    "heading": "Grow with the IvorySQL community",
+    "intro": "Whether you are a user, a developer, or a database expert, there is a place for you here. Join as a User and grow step by step along a clear five-level path.",
+    "overviewTitle": "The five levels at a glance",
+    "overviewNote": "One path, five steps — everyone starts at User and advances one level at a time.",
+    "overviewCta": "Ready? Start with your first contribution",
+    "overviewCtaSub": "Every accepted contribution moves you one step up the path.",
+    "steps": [
+      {
+        "code": "L0",
+        "name": "User",
+        "tagline": "Download IvorySQL, try it, ask and answer questions.",
+        "summary": "The doorway to the community. Install IvorySQL, use it for real work, and connect with the people around it.",
+        "points": [
+          "Install and use IvorySQL for your own projects",
+          "Ask questions — and help others with answers",
+          "Follow releases and community news"
+        ],
+        "advance": "Make one accepted contribution and you become a Contributor. A well-written Issue already counts — it's the easiest first step."
+      },
+      {
+        "code": "L1",
+        "name": "Contributor",
+        "tagline": "Your first accepted contribution makes you official.",
+        "summary": "Your first accepted contribution — an issue, a doc fix, a review, or a small PR — puts you on the contributor map.",
+        "points": [
+          "A digital contribution certificate you can show anywhere",
+          "Your name on the contributor wall",
+          "You can request a personal “Beacon” mentor"
+        ],
+        "advance": "Stay engaged — contribute in at least 2 of the past 3 months — and you will grow into an Active Contributor."
+      },
+      {
+        "code": "L2",
+        "name": "Active Contributor",
+        "tagline": "A contributor the community can count on.",
+        "summary": "A contributor others rely on: your reviews, discussions, and code shape the project week after week.",
+        "points": [
+          "First pick for speaking at community events",
+          "Eligible to become a maintainer of a module",
+          "Considered for annual awards and open-source summer programs"
+        ],
+        "advance": "Contribute in 8 of the last 12 months, go deep into one module, and be nominated by a PMC Member."
+      },
+      {
+        "code": "L3",
+        "name": "Committer",
+        "tagline": "Now you are core — merge rights and all.",
+        "summary": "You are trusted with the repositories: merge code, approve pull requests, and help ship releases.",
+        "points": [
+          "Merge code and approve pull requests",
+          "Help plan and ship releases",
+          "Mentor newer contributors"
+        ],
+        "advance": "Show leadership across the community and be nominated by at least two PMC Members."
+      },
+      {
+        "code": "L4",
+        "name": "PMC Member",
+        "tagline": "A governance member shaping the project — the end of the path.",
+        "summary": "The top of the path: as a PMC Member you help decide where the project goes next.",
+        "points": [
+          "Vote on the roadmap, releases, and new members",
+          "Nominate the next generation of Committers and PMC Members"
+        ],
+        "advance": "Beyond this level, you can be elected to the Technical Committee or invited to the Expert Advisory Committee — the governance roles that shape the community itself."
+      }
+    ],
+    "detailsTitle": "Zoom in on each level",
+    "aboutLabel": "What this level is",
+    "canLabel": "What you can do here",
+    "toNextLabel": "To reach the next level",
+    "mentorTitle": "Support along the way — a “Beacon” mentor",
+    "mentorPoints": [
+      "From Contributor on, you can request a Beacon mentor",
+      "Mentors are Committers, PMC Members, or Technical Committee members. They help you find your first contribution, review your work, and back your promotion"
+    ],
+    "ctaHeading": "Ready to take your first step?",
+    "ctaDesc": "Start with one contribution — an issue report, a translation, a code review, or a pull request. Every accepted contribution moves you up the path.",
+    "guideLabel": "Open the Contributing Guide",
+    "contactLabel": "Questions? Contact the PMC:",
+    "govTitle": "Governance & committees",
+    "govIntro": "For readers who want to go deeper — how the community is governed beyond the growth path.",
+    "govCards": [
+      {
+        "title": "Five-level identity path",
+        "points": [
+          "Everyone starts at User and climbs one level at a time",
+          "Roles are lifelong; inactive members may become Emeritus"
+        ]
+      },
+      {
+        "title": "Technical Committee",
+        "points": [
+          "A governance office, not a rank above PMC Member",
+          "Elected from PMC Members: nomination → committee vote (≥ 2/3) → 2-week announcement",
+          "Term: 2 years, renewable"
+        ]
+      },
+      {
+        "title": "Expert Advisory Committee",
+        "points": [
+          "Invited specialists, independent of the growth path",
+          "Advise the community on technology and open source"
+        ]
+      }
+    ],
+    "eacLink": "Meet the Expert Advisory Committee"
   }
 }

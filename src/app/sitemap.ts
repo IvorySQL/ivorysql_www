@@ -17,6 +17,7 @@ const STATIC_PATHS = [
   "/community/contribution-guidelines",
   "/community/contributors",
   "/community/roadmap",
+  "/community/roles",
   "/community/stories",
   "/ecosystem",
   "/partners",

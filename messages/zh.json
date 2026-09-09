@@ -84,6 +84,10 @@
         "title": "路线图",
         "description": "产品路线图与未来规划"
       },
+      "roles": {
+        "title": "角色与成长路径",
+        "description": "社区角色、五级成长路径与治理架构"
+      },
       "issueTracker": {
         "title": "问题跟踪",
         "description": "提交 Bug 反馈与功能建议"
@@ -1081,5 +1085,118 @@
   "HomeMeta": {
     "metaTitle": "IvorySQL - 开源的 Oracle 兼容 PostgreSQL 数据库",
     "metaDescription": "开源的 Oracle 兼容 PostgreSQL 数据库。基于 PostgreSQL 构建、兼容 Oracle 的高性能数据库，专为可靠性与性能而生。"
+  },
+  "RolesPage": {
+    "metaTitle": "贡献者成长路径 | IvorySQL 社区",
+    "metaDescription": "了解你在 IvorySQL 社区可以担任的每个角色，以及五级成长路径如何运转；进阶读者还可了解技术委员会与专家顾问委员会。",
+    "backToHome": "返回首页",
+    "badge": "社区",
+    "heading": "与 IvorySQL 社区一起成长",
+    "intro": "无论你是用户、开发者还是数据库专家，都能在这里找到自己的位置。从 User 加入，沿着清晰可见的五级路径逐级成长。",
+    "overviewTitle": "五级路径一览",
+    "overviewNote": "一条路径，五个台阶——所有人从 User 起步，一级一级往上走。",
+    "overviewCta": "准备好了吗？从第一个贡献开始",
+    "overviewCtaSub": "每一次被采纳的贡献，都会让你在路径上更进一步。",
+    "steps": [
+      {
+        "code": "L0",
+        "name": "User（用户）",
+        "tagline": "下载 IvorySQL、上手试用、提问交流。",
+        "summary": "社区的大门。安装 IvorySQL，用它做真实的事，并认识身边一起用的人。",
+        "points": [
+          "安装 IvorySQL 并用于自己的项目",
+          "提问，也帮别人解答",
+          "关注版本发布与社区动态"
+        ],
+        "advance": "完成 1 次被采纳的贡献，你就成为 Contributor。写得清楚的 Issue 也算贡献——这是最顺手的起点。"
+      },
+      {
+        "code": "L1",
+        "name": "Contributor（贡献者）",
+        "tagline": "第一个被采纳的贡献，让你正式“上榜”。",
+        "summary": "你的第一个被采纳的贡献——一个 Issue、一处文档修改、一次评审或一个小 PR——让你进入贡献者地图。",
+        "points": [
+          "随时可展示的电子贡献证书",
+          "名字登上贡献者墙",
+          "可以申请一位“灯塔”导师"
+        ],
+        "advance": "保持参与（最近 3 个月内至少 2 个月有贡献），你就会成长为 Active Contributor。"
+      },
+      {
+        "code": "L2",
+        "name": "Active Contributor（活跃贡献者）",
+        "tagline": "社区能放心依赖的贡献者。",
+        "summary": "别人可以信赖的贡献者：你的评审、讨论与代码，一周又一周地塑造着这个项目。",
+        "points": [
+          "社区演讲机会优先",
+          "可申请成为模块维护者",
+          "进入年度评选与开源之夏推荐"
+        ],
+        "advance": "最近 12 个月中至少 8 个月有贡献、深入吃透一个模块，并获得一位 PMC Member 的提名。"
+      },
+      {
+        "code": "L3",
+        "name": "Committer（提交者）",
+        "tagline": "你已经进入核心——拥有合并权限。",
+        "summary": "社区把仓库交给你：合并代码、批准 PR，一起把版本发出去。",
+        "points": [
+          "合并代码、Approve PR",
+          "参与版本发布规划与发布",
+          "带一带更新的贡献者"
+        ],
+        "advance": "在社区里展现领导力，并获得至少两位 PMC Member 的提名。"
+      },
+      {
+        "code": "L4",
+        "name": "PMC Member（项目管理委员会成员）",
+        "tagline": "参与治理、决定项目方向——路径的终点。",
+        "summary": "成长路径的顶端：作为 PMC Member，你参与决定项目下一步往哪走。",
+        "points": [
+          "对路线图、发布与新成员任命投票",
+          "提名下一代 Committer 与 PMC Member"
+        ],
+        "advance": "再往上，你还有机会被选举进入技术委员会，或被邀请加入专家顾问委员会——去塑造社区本身。"
+      }
+    ],
+    "detailsTitle": "每个级别，细看一下",
+    "aboutLabel": "这一级是什么",
+    "canLabel": "在这一级，你可以",
+    "toNextLabel": "想进入下一级",
+    "mentorTitle": "一路上，有“灯塔”导师相伴",
+    "mentorPoints": [
+      "从 Contributor 起即可申请“灯塔”导师",
+      "导师来自 Committer、PMC 与技术委员会——帮你找到第一个贡献切入点、评审你的工作，并在晋升时为你背书"
+    ],
+    "ctaHeading": "准备好迈出第一步了吗？",
+    "ctaDesc": "从一次贡献开始——一个 Issue、一处文档翻译、一次代码评审或一个 Pull Request。每次被采纳的贡献，都会让你在成长路径上更进一步。",
+    "guideLabel": "打开贡献指南",
+    "contactLabel": "有疑问？联系 PMC：",
+    "govTitle": "治理与委员会",
+    "govIntro": "给想更进一步的读者——成长路径之外，社区如何治理。",
+    "govCards": [
+      {
+        "title": "五级身份路径",
+        "points": [
+          "所有人从 User 起步，逐级晋升，不允许空降",
+          "角色长期有效；不活跃成员可转为 Emeritus"
+        ]
+      },
+      {
+        "title": "技术委员会",
+        "points": [
+          "是治理职务，不是比 PMC 更高一级的身份",
+          "从 PMC Member 中选举：提名 → 委员会投票（≥ 2/3）→ 公示 2 周",
+          "任期 2 年，可连任"
+        ]
+      },
+      {
+        "title": "专家顾问委员会",
+        "points": [
+          "特邀专家组成，独立于成长路径",
+          "为社区提供数据库技术与开源生态建议"
+        ]
+      }
+    ],
+    "eacLink": "认识专家顾问委员会"
   }
 }
