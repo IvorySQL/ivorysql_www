@@ -26,6 +26,7 @@ import {
   Package,
   Server,
   ShieldCheck,
+  TrendingUp,
   Users,
 } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
@@ -153,6 +154,11 @@ const COMMUNITY_GROUPS_DEF: { groupKey: string; items: NavItemDef[] }[] = [
         key: "expertCommittee",
         href: "/community/expert-advisory-committee",
         icon: <GraduationCap className="size-4" />,
+      },
+      {
+        key: "roles",
+        href: "/community/roles",
+        icon: <TrendingUp className="size-4" />,
       },
       {
         key: "partners",
