@@ -1,0 +1,98 @@
+---
+slug: pg-18-19-new-features
+title: "PostgreSQL 18/19 New Features in Depth: From I/O Prefetch to Intelligent Operations, Elevating the Database Experience"
+author: "digoal"
+category: PostgreSQL
+image: "/images/blog/covers/pg-18-19-new-features.png"
+tags: [PostgreSQL, PostgreSQL 18, PostgreSQL 19, New Features, I/O]
+description: "A deep dive into the new features of PostgreSQL 18 and 19, from I/O prefetch and UUID v7 to wait-event history statistics, intelligent vacuum, and adaptive parallel I/O."
+---
+
+> This article is based on the presentation at HOW 2026, delivered by digoal, PostgreSQL ACED, member of the IvorySQL Expert Advisory Committee, and operator of the WeChat official account “digoal”.
+
+## 1. How to Efficiently “Dig Out” New Features?
+
+The presenter shared an interesting practice: facing the already-released Release Notes of PG 18, he used AI tools (such as Copilot) to automatically analyze thousands of commit logs — first having the model summarize more than thirty potential features, then asking it one by one to generate detailed explanations and code verification, and finally screening out the items with the strongest user-perceived impact. For PG 19, which has not yet been officially released, he pulled all commits from the past year (from the PG 18 Beta1 point in time to the present) and likewise had AI analyze and refine them. After manual review, the accuracy proved satisfactory. This approach also offers community enthusiasts an efficient way to track new versions.
+
+![img](/images/blog/2026-08-04-pg-18-19-new-features/1.png)
+
+## 2. PostgreSQL 18: A Double Boost in Performance and Development Experience
+
+### 1. Native Exclusion Constraints, Keeping Spatiotemporal Data from “Fighting”
+
+In business systems, we often need to avoid overlaps among data such as time ranges and geographic polygons. For example, in a meeting room reservation table, the same room must not be reserved twice for the same time period. Previously, PG implemented this through `EXCLUDE` constraints, but the syntax was complex and relied on extensions. PG 18 **natively supports mutual exclusion constraints for range types and spatial types**, with cleaner syntax and the ability to use indexes to accelerate checks, greatly lowering the development threshold.
+
+![img](/images/blog/2026-08-04-pg-18-19-new-features/2.png)
+
+### 2. UUID v7: Saying Goodbye to Index Bloat
+
+When random UUIDs are used as primary keys, their unordered values cause frequent splits in B-Tree indexes, resulting in index space bloat and performance degradation. PG 18 introduces **UUID v7**, whose values are generated from a combination of timestamps and machine codes and are naturally ordered. On write, new data is always appended at the end of the index, effectively avoiding splits — making it highly suitable for high-concurrency write scenarios.
+
+![img](/images/blog/2026-08-04-pg-18-19-new-features/3.png)
+
+### 3. UPDATE Returning Old + New Values in One Go
+
+In development, there is often the requirement to “get both the updated value and the pre-update value after updating a record.” Previously, one had to `UPDATE` first and then `SELECT`, sometimes even adding locks to guarantee consistency — at least two interactions. PG 18 enhances the `UPDATE ... RETURNING` syntax, **allowing both the OLD and NEW rows to be returned at the same time**, turning the entire process into a single atomic SQL statement, reducing lock contention and network round trips, and improving business efficiency.
+
+![img](/images/blog/2026-08-04-pg-18-19-new-features/4.png)
+
+### 4. Asynchronous I/O Prefetch: Making Cloud Disk Performance No Longer Just “on Paper”
+
+Cloud disks often advertise high IOPS and large bandwidth, but the latency of a single I/O is relatively high, and a single thread cannot saturate the performance. PG 18 introduces **asynchronous I/O prefetch (Async I/O Prefetch)**: when a sequential scan or Vacuum processes one data block, it tells the kernel in advance, through the prefetch interface, the addresses of the next one or several blocks, and the kernel loads them into cache ahead of time. In this way, even if single-request latency is high, the prefetch pipeline can make full use of the I/O bandwidth, significantly improving the efficiency of large-table scans and garbage collection.
+
+![img](/images/blog/2026-08-04-pg-18-19-new-features/5.png)
+
+### 5. Skip Scan: The “Fast Lane” for Composite Indexes
+
+For a composite index such as `(class_id, custom_id)`, if the query condition contains only `custom_id`, before PG 18 the database would either not use the index or perform a full scan. PG 18 introduces the **Skip Scan** optimization: when the leading column of the index (such as `class_id`) has low cardinality, the optimizer “skips” to the corresponding index entry for each `class_id` value, and then searches for `custom_id`. This is equivalent to recursively executing a small number of exact lookups, avoiding a traversal of all index entries and greatly improving the performance of such queries.
+
+![img](/images/blog/2026-08-04-pg-18-19-new-features/6.png)
+
+### 6. pg_upgrade Migrates Statistics — Ready to Use Right After the Upgrade
+
+After a major-version upgrade, statistics are not migrated automatically, which leads to inaccurate execution plans and forces an immediate `ANALYZE`, which is time-consuming. PG 18's `pg_upgrade` **supports migrating statistics along with the new instance**, so business can be opened directly after the upgrade completes, without waiting for analysis, effectively reducing the upgrade downtime window.
+
+![img](/images/blog/2026-08-04-pg-18-19-new-features/7.png)
+
+## 3. PostgreSQL 19: A Leap in Operational Observability and Automated Governance
+
+### 1. Wait Event History Statistics: No More “Blind Men and the Elephant”
+
+When managing hundreds or thousands of instances, DBAs usually need to first identify the instances under the heaviest load and then analyze the causes in depth. Previously, only the current wait events could be viewed, making it impossible to trace the wait distribution over a past period. PG 19 adds the **`pg_stat_wait_events`** view, which **records the total duration and total count of all wait events since the last reset** (including I/O, locks, CPU, etc.). Combined with snapshot comparison, one can clearly pinpoint which wait events spiked within a specific time window and then correlate them with specific SQL, greatly improving root-cause analysis efficiency.
+
+### 2. Intelligent Garbage Collection: Priority Scheduling to Avoid Transaction Wraparound
+
+The Autovacuum process originally scanned tables in system-catalog order, treating all tables “equally,” yet tables differ in age (transaction ID consumption) and bloat level. PG 19 improves the collection strategy: **administrators can set weight coefficients per table or globally across multiple dimensions (such as age, bloat ratio, and last cleanup time)**, and the system computes a weighted score for each table, processing the highest-scoring table first. This ensures that large tables whose “age is approaching wraparound” are frozen in time, effectively avoiding the database read-only risk caused by transaction ID wraparound. Meanwhile, system views display the score of each dimension, making it easy for operations staff to monitor in real time.
+
+### 3. Adaptive Parallel I/O: Dynamically Scaling Parallelism
+
+Previously, the `effective_io_concurrency` parameter required an administrator to manually set a fixed parallelism level, but the optimal value varies greatly across different table sizes and workloads. PG 19 introduces **adaptive parallel I/O**: administrators only need to set a minimum and a maximum parallelism level, and when executing operations such as sequential scans, bitmap scans, and range scans, the system dynamically monitors I/O utilization — if I/O is not saturated, it gradually increases the number of workers until it reaches the upper limit or I/O saturation; after remaining idle beyond a threshold time, it automatically falls back to the minimum. DBAs no longer have to agonize over parameter tuning.
+
+### 4. Native Online Table Shrink (the Concurrent Version of VACUUM FULL)
+
+Table bloat is a common headache in PG operations. Previously, reclaiming space meant either using `VACUUM FULL` (which holds an exclusive lock for the whole process) or relying on third-party tools such as `pg_repack` (whose stability is affected by version compatibility). PG 19 integrates functionality similar to `pg_repack` into the kernel: **leveraging the logical replication mechanism**, it first creates a snapshot of the target table, copies all data into new storage files, synchronizes incremental changes at the same time, and finally takes a brief exclusive lock at the moment of the switch-over. The whole process has minimal impact on business and requires no additional plugins. Note that this feature requires the table to have a primary key or a non-null unique key.
+
+### 5. Comprehensively Enhanced Backup and Compression
+
+- **`pg_dumpall` supports binary and compressed formats**: previously only text format could be output, which occupied a lot of space and was slow to restore; now, just like `pg_dump`, one can choose a custom format or compression.
+- **The default compression algorithm switches to Zstandard (zstd)**: for large fields such as JSON, zstd offers a higher compression ratio and faster speed, making it especially suitable for massive JSON storage in AI scenarios.
+
+### 6. Finer I/O Observation and a Unified Status View
+
+- **`EXPLAIN` adds I/O details**: the number of prefetch reads and waits during SQL execution can be viewed, helping determine whether parallelism or prefetch parameters should be adjusted.
+- **Unified status view**: control-file information and memory structures originally scattered across multiple system views can now be read at once through a single view as a consistent snapshot, avoiding inconsistencies in points in time caused by multiple queries.
+
+### 7. Graph Queries (SQL/PGQ) and Strong Consistency Guarantees
+
+- **Property graph query support**: PG 19 introduces the SQL/PGQ standard syntax, making it possible to build property graph models inside a relational database. This feature is especially useful in scenarios such as AI Agent memory management and knowledge-graph retrieval, where complex relationships between entities can be expressed conveniently to achieve precise retrieval.
+- **Wait for LSN**: in a read-write-split architecture, if the business requires the strong consistency of “reading one's own writes,” one can specify waiting for a specific LSN position of the primary before querying on the standby. Middleware or the application layer can use this feature to ensure that the standby data has been synchronized to the latest transaction before returning query results, avoiding reads of stale data.
+
+### 8. Statistics Migration Completed & DDL Information Extraction
+
+PG 18 supports the migration of ordinary statistics, but it did not include user-created extended statistics (multi-column correlation statistics). PG 19 completes this gap, ensuring that after an upgrade the optimizer can still generate accurate cost estimates. In addition, the new release provides a more convenient DDL information extraction interface (for example, obtaining the Schema definitions of views and foreign tables); however, complete support for table-level rebuild SQL may still need to be refined in a later version.
+
+## 4. Upgrade Recommendations and Summary
+
+The cost of upgrading between PostgreSQL versions is relatively low: whether through `pg_upgrade` or logical replication migration, it can be completed fairly smoothly. **PG 18 focuses on consolidating the underlying I/O performance and development convenience**, making it suitable for teams pursuing high throughput and simplified business code; **PG 19 focuses on operational observability and automated governance**, providing sharp tools for large-scale, demanding production environments — especially adaptive I/O, intelligent collection, and online table shrink, which will significantly lighten the daily burden on DBAs.
+
+In response to the new challenges that AI applications pose to databases (such as JSON storage, graph relationship retrieval, and consistent reads), PG 19 has also responded positively. Overall, PostgreSQL, with its steady yet rapid pace, continues to consolidate its position as “the most advanced open source database.” We encourage users to keep an eye on the new versions, plan testing and upgrade paths as early as possible, and enjoy the dividends of open source technology.

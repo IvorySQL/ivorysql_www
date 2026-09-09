@@ -2,13 +2,12 @@
 slug: fdw-pushdown
 title: "Postgres_fdw 优化实战：GUC 参数控制 Join Pushdown"
 author: "Nickyoung"
-category: IvorySQL
+category: PostgreSQL
 image: "/images/blog/covers/fdw-pushdown-zh.png"
 tags: [PostgreSQL, Postgres_fdw, Pushdown, Optimization, HOW2026]
 description: "一次类型转换如何悄悄破坏 Postgres_fdw 的 Join 下推，导致性能骤降万倍，以及如何用一个 GUC 参数在不改动应用 SQL 的前提下解决问题。"
 ---
 
-> 本文整理于 HOW 2026 演讲内容，演讲者：杨向博，PostgreSQL ACE。
 
 ## 一、问题现象：一条 SQL 的本地与远程执行差距
 

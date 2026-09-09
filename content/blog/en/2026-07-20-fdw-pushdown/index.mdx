@@ -2,13 +2,13 @@
 slug: fdw-pushdown
 title: "Postgres_fdw Optimization: GUC Parameter Control for Join Pushdown"
 author: "Nickyoung"
-category: IvorySQL
+category: PostgreSQL
 image: "/images/blog/covers/fdw-pushdown-en.png"
 tags: [PostgreSQL, Postgres_fdw, Pushdown, Optimization, GUC, HOW2026]
 description: "How a type-conversion node silently broke Postgres_fdw's Join pushdown, causing a 10,000x slowdown — and how a GUC switch fixed it without touching application SQL."
 ---
 
-> Based on Yang Xiangbo's (PostgreSQL ACE) presentation at HOW 2026.
+> Based on Nickyoung's (PostgreSQL ACE) presentation at HOW 2026.
 
 ## 1. The Problem: A Local vs Remote SQL Performance Gap
 

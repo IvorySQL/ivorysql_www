@@ -1,0 +1,152 @@
+---
+slug: pg-table-rewrite-vacuum-full-repack
+title: "From VACUUM FULL to REPACK: The Evolution of PostgreSQL Table Rewriting"
+author: "Fu Chao"
+category: PostgreSQL
+image: "/images/blog/covers/pg-table-rewrite-vacuum-full-repack.png"
+tags: [PostgreSQL, VACUUM FULL, pg_repack, REPACK, PG19, Table Rewriting]
+description: "A walk through three generations of PostgreSQL table-rewriting solutions — from the all-locking VACUUM FULL/CLUSTER, to pg_repack's trigger-and-log-table trick, to PG19's kernel-native REPACK built on logical decoding."
+---
+
+> **Author: Fu Chao**, dual-certified Oracle ACE and PostgreSQL ACE and a core member of the PG Xi'an User Group. He focuses on database operations and technology advocacy and holds Oracle OCM and Kubernetes CKS certifications.
+
+Every DBA has been through this scenario: a large business table, due to frequent updates, has bloated to several times its actual data size, and queries are getting slower and slower. You decide to use `VACUUM FULL` to "compress" it back to a normal size, only to find that the moment the command runs, all reads and writes on the table are locked — the business side immediately raises the alarm, and you can only sheepishly pick a window in the early morning to run it again.
+
+This is the most classic contradiction in PostgreSQL table maintenance: **rewriting a table requires a big, heavy-handed operation in terms of space, while the business cannot tolerate even a moment of downtime**. Around this contradiction, the community and the core team have successively come up with three generations of solutions. This article follows this line of evolution and explains the ideas, costs, and trade-offs of `VACUUM FULL`, `pg_repack`, and PG19's `REPACK`.
+
+## 1. Why Does a Table Need to Be "Rewritten"?
+
+To understand the three generations of solutions, you first need to understand that rewriting (rewrite) and cleaning up (vacuum) are two different things.
+
+PostgreSQL implements multi-version concurrency control based on MVCC: after a record is UPDATEed, the old version is not deleted immediately; instead it stays in the original page as a "dead tuple", waiting for VACUUM to reclaim it. The problem is that **VACUUM merely marks the dead tuples inside a page as reusable, and does not return the space to the operating system** — the pages are still there, the file is still there, and the table cannot "slim down". This is the so-called "bloat".
+
+The only way to truly slim down a table is to **rewrite** it: copy the rows that are still alive in the table, as-is, into a brand-new physical file, and then discard the old file entirely. The new file has no holes left by dead tuples, so the disk space is naturally returned to the operating system.
+
+Rewriting also has an extra capability: **physical ordering**. If rows are written into the new file in the order of a certain index, then for range queries the matching data will be concentrated in adjacent pages, and disk I/O is greatly reduced — this is the value of "clustering" (CLUSTER).
+
+So all three generations of solutions are actually doing the same thing: **rewriting the table**. The difference lies only in one core question — how are the concurrent changes (inserts, updates, deletes) on the table during the rewrite handled?
+
+## 2. First Generation: Lock Everything — VACUUM FULL and CLUSTER
+
+The simplest approach, and also the oldest: **take an ACCESS EXCLUSIVE lock on the table during the rewrite**.
+
+`VACUUM FULL` rewrites the entire table into a new file, reclaiming space only without reordering; `CLUSTER` rewrites while arranging the physical order according to a specified index. During the execution of either one, all reads and writes by other transactions on this table are blocked until the rewrite completes.
+
+The advantage of this approach is its flawless simplicity: built into the core, zero dependencies, no prerequisites of any kind, and the most conservative in terms of data safety. For small and medium-sized tables, or for systems that can accept a maintenance window, it remains a reliable choice to this day — PG19 also continues to keep both commands for compatibility. In practice it is quite straightforward:
+
+```sql
+-- Reclaim table space (no reordering); a single table or the whole database can be specified
+VACUUM FULL orders;
+VACUUM FULL;                          -- all tables in the current database
+
+-- Physically reorder by an index (cluster)
+CLUSTER orders USING orders_pkey;
+
+-- Cluster index management: configure the default cluster index first, then run CLUSTER against it, and finally refresh statistics
+ALTER TABLE orders CLUSTER ON orders_pkey;
+CLUSTER orders;
+ANALYZE orders;                       -- statistics must be refreshed after the rewrite
+```
+
+But its ceiling is equally obvious: **not feasible on large tables**. Rewriting a TB-level table can take tens of minutes or even longer, during which the business is completely stalled. Today, when "7×24 hours online" has become the standard, this is almost a death sentence for the first generation in large-table scenarios. The community therefore began to think: can the rewrite be made "online"?
+
+## 3. Second Generation: Triggers and Log Tables — the Clever Trick of pg_repack
+
+Since the business cannot possibly stop during a rewrite, the answer is to **"write the changes down and apply them afterwards"**. That is the core idea of pg_repack, and the soul of it as the second-generation solution. This tool was renamed in 2011 from the earlier pg_reorg project, and has iterated to 1.5.3 so far, supporting PostgreSQL 9.5 through 18.
+
+Its execution process can be told as a seven-step story:
+
+1. First, create a "log table";
+2. Attach an AFTER trigger to the original table; from then on, every insert, update, and delete on this table is **synchronously recorded into the log table** — this is its "incremental capture" mechanism;
+3. At the same time, pg_repack copies all the live rows of the original table into a new table (optionally reordered by an index or specified columns);
+4. Rebuild all indexes on the new table;
+5. The changes accumulated in the log table are "replayed" onto the new table in batches;
+6. After the new table catches up, a brief lock is taken, and the new and old tables (together with their indexes and TOAST tables) are **instantaneously swapped** through the system catalog;
+7. Drop the old table and you are done.
+
+Smart readers will already have spotted the key point: **the ACCESS EXCLUSIVE lock appears only at two moments — at the very beginning when creating the log table, and at the very end when swapping files**; the long copying phase in between holds only a SHARE UPDATE EXCLUSIVE lock — ordinary DML runs as usual, and only DDL is blocked. The lock window is squeezed from "the whole process" down to "millisecond-level moments at both ends"; that is the whole secret of online rewriting. Take a look at some actual usage:
+
+```bash
+# Installation and enablement: compile the binary and install, then add the in-database extension (both versions must match)
+make && sudo make install
+psql -d your_db -c "CREATE EXTENSION pg_repack"
+
+# Online space reclamation (--no-order is the equivalent of VACUUM FULL)
+pg_repack --no-order -t orders your_db
+
+# Online clustering (by default ordered by the cluster index already configured on the table)
+pg_repack -t orders your_db
+
+# Rewrite ordered by any column
+pg_repack --order-by "created_at" -t orders your_db
+
+# Online tablespace migration (--moveidx moves the indexes along too)
+pg_repack -d your_db -t orders -s fast_tbs --moveidx
+
+# Dry-run preview first, then execute for real
+pg_repack -d your_db -N
+```
+
+Of course, there are costs, and they are not small:
+
+- **A primary key is required** (or a NOT NULL unique index). When replaying changes, the trigger needs the primary key to locate rows; tables without a primary key are turned away outright;
+- **Triggers cause write amplification**. During the rewrite, every DML must additionally write one record to the log table, which is a considerable burden on write-heavy tables; in extreme cases, log backlog can even fail to "catch up" (1.5.x provides parameters such as `--switch-threshold` and `--apply-count` to alleviate this);
+- **UNLOGGED tables and temporary tables are not supported**, clustering by GiST indexes is not possible, and declaratively partitioned parent tables cannot be processed as a whole;
+- As a third-party extension, it requires the client binary and the in-database extension to **match strictly in version**, and after a failure it may leave behind temporary objects that need manual cleanup.
+
+Even so, pg_repack remains the de facto standard for online rewriting on PG18 and below. Its limitations are also clear: **all of its capabilities are built on the external mechanism of "triggers + log tables"** — like a set of bolted-on scaffolding: it works, but it is never part of the database itself.
+
+## 4. Third Generation: A Kernel Logical Decoding Solution — REPACK
+
+PG19's `REPACK` turns this from "bolting on scaffolding" into a "native capability".
+
+First, about the naming. `VACUUM FULL` and `CLUSTER` actually do the same thing — rewrite a table — but one name makes people mistake it for an enhanced version of VACUUM, while the other borrows the vague concept of "cluster" from commercial databases, so their functionality overlaps and they confuse each other. PG19 simply unified them into a command with clear semantics: **REPACK — rewrite a table to reclaim disk space**. The old commands remain for compatibility, but the new name carries the new mechanism.
+
+The plain mode of `REPACK` is no different from the first generation (exclusive lock throughout); what really shines is the `CONCURRENTLY` option — it replaces pg_repack's "incremental capture" mechanism with the kernel's own **logical decoding**:
+
+1. Create a temporary logical replication slot and start copying the table data (ignoring dead tuples) into a new file;
+2. During the copy, business DML is not blocked at all, and the changes that occur are **staged to temporary files** through logical decoding;
+3. After the data copy completes, replay the staged incremental changes onto the new file;
+4. Only at this point is the ACCESS EXCLUSIVE lock requested — solely for swapping the new and old table and index files;
+5. Once the swap is done, the lock is released.
+
+Compared with pg_repack, the biggest change is: **triggers are no longer needed, so there is no DML write amplification**; in theory, the lock window is compressed to the millisecond level of "swapping files". If the volume of changes on the table during the rewrite is huge, the replay phase will still hold the lock, and the lock time may stretch from milliseconds to minutes — that is its only "weak spot", but it can be avoided by executing off-peak. Actual usage is as follows:
+
+```sql
+-- Plain mode (equivalent to VACUUM FULL)
+REPACK orders;
+
+-- Cluster (equivalent to CLUSTER)
+REPACK orders USING INDEX orders_pkey;
+
+-- Lock-free rewrite (first choice for production); ANALYZE runs automatically when finished
+REPACK (CONCURRENTLY, ANALYZE, VERBOSE) orders;
+
+-- Whole database: all tables on which the current user has MAINTAIN privilege (cannot be executed inside a transaction block)
+REPACK;
+
+-- Watch rewrite progress and phases in real time (catch-up = replaying changes, swapping relation files = the lock window)
+SELECT pid, relid::regclass AS tbl, command, phase,
+       heap_blks_scanned, heap_blks_total
+FROM pg_stat_progress_repack;
+```
+
+As a citizen of the kernel, it brings a complete set of supporting capabilities:
+
+- **Permission model**: no longer a superuser/owner special case, but the standard `MAINTAIN` privilege, fitting the fine-grained privilege system since PG15;
+- **Built-in monitoring**: the `pg_stat_progress_repack` view reports progress in real time, and the phase transitions can be seen — `catch-up` (replaying concurrent changes), `swapping relation files` (the lock window), and so on — making it obvious at a glance whether a lock is abnormal;
+- **Companion parameters**: `max_repack_replication_slots` (default 5, adjustable only at startup) caps the number of concurrent CONCURRENTLY runs, with each concurrent rewrite occupying one logical replication slot.
+
+Of course, the new mechanism also brings new boundaries: CONCURRENTLY does not support UNLOGGED tables, partitioned tables, or tables without a primary key or an index-based replica identity, and it cannot run inside a transaction block — logical decoding needs a row identity, and replication slots are also required; these are the physical constraints of the mechanism itself.
+
+## 5. Migration Advice for DBAs
+
+- **PG18 and below**: there is no REPACK to choose from — if you can take a maintenance window, use `VACUUM FULL`/`CLUSTER`; if you need online operation, use pg_repack, provided the table has a primary key, is not UNLOGGED, and has no DDL during the rewrite.
+- **PG19**: switch to `REPACK (CONCURRENTLY)` by default — kernel-native, no extension dependency, no trigger overhead, built-in monitoring, and the smallest lock window. After upgrading, it is recommended to smoke-test on one large table first, comparing its duration and lock time against pg_repack.
+- **Scenarios where pg_repack should still be kept**: online tablespace migration (`--tablespace`), and reordering by an arbitrary column (`--order-by`) — REPACK currently has no equivalent option for either; in addition, CONCURRENTLY requires the table to have a replica identity configured, and tables without one can only use plain mode.
+- **Supported by neither side**: online rewriting of UNLOGGED tables, and whole-table online rewriting of declaratively partitioned parent tables — for such scenarios you can only accept a maintenance window, or process each leaf partition one by one.
+- And do not forget that `max_repack_replication_slots` only takes effect at startup — set your concurrency budget in the configuration before upgrading.
+
+## Conclusion
+
+Looking back along this line of evolution, it is actually a process of "making rewriting a first-class citizen": the first generation solved concurrency with locks — simple but crude; the second generation squeezed the lock window to the two ends with triggers, but shouldered the burden of primary-key constraints and write amplification; the third generation used kernel logical decoding to make online rewriting a native capability of the database. **Locks have gotten finer and finer in granularity, and capabilities have become more and more built-in** — this is the main thread of evolution of PostgreSQL's table maintenance tooling over the past decade-plus, and the reason REPACK deserves a place in every DBA's PG19 upgrade plan.
