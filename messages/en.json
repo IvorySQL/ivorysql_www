@@ -994,7 +994,7 @@
       },
       {
         "title": "Community Opportunities",
-        "desc": "Active contributors may receive speaking, sharing, or participation opportunities at community events such as HOW and other technical activities."
+        "desc": "Significant contributors may receive speaking, sharing, or participation opportunities at community events such as HOW and other technical activities."
       },
       {
         "title": "Annual Incentives",
@@ -1090,8 +1090,8 @@
     "backToHome": "Back to Home",
     "badge": "Community",
     "heading": "Grow with the IvorySQL community",
-    "intro": "Whether you are a user, a developer, or a database expert, there is a place for you here. Join as a User and grow step by step along a clear five-level path.",
-    "overviewTitle": "The five levels at a glance",
+    "intro": "Whether you are a user, a developer, or a database expert, there is a place for you here.",
+    "overviewTitle": "IvorySQL contributor growth path",
     "overviewNote": "One path, five steps — everyone starts at User and advances one level at a time.",
     "overviewCta": "Ready? Start with your first contribution",
     "overviewCtaSub": "Every accepted contribution moves you one step up the path.",
@@ -1118,19 +1118,27 @@
           "Your name on the contributor wall",
           "You can request a personal “Beacon” mentor"
         ],
-        "advance": "Stay engaged — contribute in at least 2 of the past 3 months — and you will grow into an Active Contributor."
+        "advance": "Stay engaged — contribute in at least 2 of the past 3 months — and you will grow into a Significant Contributor."
       },
       {
         "code": "L2",
-        "name": "Active Contributor",
-        "tagline": "A contributor the community can count on.",
-        "summary": "A contributor others rely on: your reviews, discussions, and code shape the project week after week.",
+        "name": "Significant Contributor",
+        "tagline": "Recent, steady contributions the community recognizes.",
+        "summary": "A contributor who has been active over the last few months and stands out in at least two of: code review, technical discussion, merged code, or a mentor’s endorsement.",
         "points": [
           "First pick for speaking at community events",
           "Eligible to become a maintainer of a module",
           "Considered for annual awards and open-source summer programs"
         ],
-        "advance": "Contribute in 8 of the last 12 months, go deep into one module, and be nominated by a PMC Member."
+        "advance": "Contribute in 8 of the last 12 months, go deep into one module, and be nominated by a PMC Member.",
+        "criteriaLabel": "How to get here",
+        "criteriaNote": "Contributions in at least 2 of the last 3 complete calendar months, plus at least 2 of the following:",
+        "criteria": [
+          "≥ 3 accepted code-review comments",
+          "≥ 5 substantive contributions to community technical discussions",
+          "At least 1 merged non-documentation pull request",
+          "A written recommendation from a mentor or a Committer"
+        ]
       },
       {
         "code": "L3",
@@ -1168,33 +1176,31 @@
     "ctaHeading": "Ready to take your first step?",
     "ctaDesc": "Start with one contribution — an issue report, a translation, a code review, or a pull request. Every accepted contribution moves you up the path.",
     "guideLabel": "Open the Contributing Guide",
-    "contactLabel": "Questions? Contact the PMC:",
-    "govTitle": "Governance & committees",
-    "govIntro": "For readers who want to go deeper — how the community is governed beyond the growth path.",
+    "contactLabel": "Questions? Ask in GitHub Discussions",
+    "govTitle": "Governance roles",
+    "govIntro": "Community decisions are made by two separate governance bodies.",
     "govCards": [
       {
-        "title": "Five-level identity path",
-        "points": [
-          "Everyone starts at User and climbs one level at a time",
-          "Roles are lifelong; inactive members may become Emeritus"
-        ]
-      },
-      {
         "title": "Technical Committee",
+        "desc": "The community’s technical decision body, elected from PMC Members.",
         "points": [
-          "A governance office, not a rank above PMC Member",
-          "Elected from PMC Members: nomination → committee vote (≥ 2/3) → 2-week announcement",
-          "Term: 2 years, renewable"
+          "Term of 2 years, renewable",
+          "Reviews major architecture changes and approves release plans",
+          "Members keep their PMC Member status"
         ]
       },
       {
         "title": "Expert Advisory Committee",
+        "desc": "An external advisory group of invited database specialists.",
         "points": [
-          "Invited specialists, independent of the growth path",
-          "Advise the community on technology and open source"
-        ]
+          "Independent of the five levels — not a promotion step",
+          "Advises on database technology, open-source trends, and ecosystem"
+        ],
+        "linkLabel": "Meet the Expert Advisory Committee"
       }
     ],
-    "eacLink": "Meet the Expert Advisory Committee"
+    "criteriaLabel": "How to get here",
+    "contribTypesNote": "Not just code: documentation translation, answering questions, organizing events, and open-source advocacy all count as contributions.",
+    "introLine2": "Join as a User and grow step by step along a clear five-level path."
   }
 }
