@@ -32,6 +32,9 @@ type Step = {
   summary: string;
   points: string[];
   advance: string;
+  criteriaLabel?: string;
+  criteriaNote?: string;
+  criteria?: string[];
 };
 
 export default async function RolesPage({
@@ -44,7 +47,12 @@ export default async function RolesPage({
 
   const steps = t.raw("steps") as Step[];
   const mentorPoints = t.raw("mentorPoints") as string[];
-  const govCards = t.raw("govCards") as { title: string; points: string[] }[];
+  const govCards = t.raw("govCards") as {
+    title: string;
+    desc: string;
+    points: string[];
+    linkLabel?: string;
+  }[];
 
   return (
     <div className="bg-background">
@@ -71,6 +79,8 @@ export default async function RolesPage({
           </h1>
           <p className="text-muted-foreground mx-auto mt-4 max-w-2xl text-lg leading-relaxed">
             {t("intro")}
+            <br />
+            {t("introLine2")}
           </p>
         </div>
 
@@ -87,38 +97,32 @@ export default async function RolesPage({
             {/* connector line */}
             <div className="bg-primary/20 absolute left-0 right-0 top-1/2 hidden h-0.5 -translate-y-1/2 md:block" />
             <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-5">
-              {steps.map((step, i) => {
-                const isLast = i === steps.length - 1;
-                return (
-                  <a
-                    key={step.code}
-                    href={`#${step.code}`}
-                    className={`group bg-card border-border relative rounded-2xl border p-5 transition-all hover:-translate-y-1 hover:shadow-md ${
-                      isLast
-                        ? "border-primary/60 bg-primary/5"
-                        : ""
-                    }`}
-                  >
-                    <span
-                      className={`flex size-9 items-center justify-center rounded-full text-sm font-bold ${
-                        isLast
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-primary/10 text-primary"
-                      }`}
-                    >
-                      {step.code.replace("L", "")}
-                    </span>
-                    <p className="text-foreground mt-3 font-semibold">
-                      {step.name}
-                    </p>
-                    <p className="text-muted-foreground mt-1 text-sm leading-relaxed">
-                      {step.tagline}
-                    </p>
-                  </a>
-                );
-              })}
+              {steps.map((step) => (
+                <a
+                  key={step.code}
+                  href={`#${step.code}`}
+                  className="group bg-card border-border relative rounded-2xl border p-5 transition-all hover:-translate-y-1 hover:shadow-md"
+                >
+                  <span className="bg-primary/10 text-primary flex size-9 items-center justify-center rounded-full text-sm font-bold">
+                    {step.code.replace("L", "")}
+                  </span>
+                  <p className="text-foreground mt-3 font-semibold">
+                    {step.name}
+                  </p>
+                  <p className="text-muted-foreground mt-1 text-sm leading-relaxed">
+                    {step.tagline}
+                  </p>
+                </a>
+              ))}
             </div>
           </div>
+        </div>
+
+        {/* Contribution types note */}
+        <div className="mx-auto mt-6 max-w-5xl">
+          <p className="text-muted-foreground bg-muted/40 rounded-xl border-0 px-4 py-3 text-center text-sm">
+            {t("contribTypesNote")}
+          </p>
         </div>
 
         {/* Early CTA */}
@@ -166,6 +170,24 @@ export default async function RolesPage({
                     {step.summary}
                   </p>
 
+                  {step.criteria && (
+                    <>
+                      <p className="text-primary mt-5 text-sm font-semibold">
+                        {step.criteriaLabel ?? t("criteriaLabel")}
+                      </p>
+                      {step.criteriaNote && (
+                        <p className="text-muted-foreground mt-1.5 text-sm leading-relaxed">
+                          {step.criteriaNote}
+                        </p>
+                      )}
+                      <ul className="text-muted-foreground mt-2 list-disc space-y-1 pl-5 text-sm leading-relaxed">
+                        {step.criteria.map((item) => (
+                          <li key={item}>{item}</li>
+                        ))}
+                      </ul>
+                    </>
+                  )}
+
                   <p className="text-primary mt-5 text-sm font-semibold">
                     {t("canLabel")}
                   </p>
@@ -185,11 +207,7 @@ export default async function RolesPage({
                       {t("toNextLabel")}
                     </p>
                   )}
-                  <p
-                    className={`${
-                      isLast ? "border-primary/60 bg-primary/10" : "border-primary/20 bg-primary/5"
-                    } border-primary/20 text-foreground mt-2 rounded-lg border bg-primary/5 px-3 py-2.5 text-sm leading-relaxed`}
-                  >
+                  <p className="border-primary/20 bg-primary/5 text-foreground mt-2 rounded-lg border px-3 py-2.5 text-sm leading-relaxed">
                     {step.advance}
                   </p>
                 </div>
@@ -230,10 +248,12 @@ export default async function RolesPage({
                 {t("guideLabel")}
               </Link>
               <a
-                href="mailto:pmc@ivorysql.org"
+                href="https://github.com/IvorySQL/IvorySQL/discussions"
+                target="_blank"
+                rel="noopener noreferrer"
                 className="border-border bg-background text-foreground hover:bg-muted rounded-lg border px-5 py-2.5 text-sm font-medium transition-colors"
               >
-                {t("contactLabel")} pmc@ivorysql.org
+                {t("contactLabel")}
               </a>
             </div>
           </div>
@@ -247,7 +267,7 @@ export default async function RolesPage({
           <p className="text-muted-foreground mt-2 text-sm">
             {t("govIntro")}
           </p>
-          <div className="mt-8 grid gap-6 md:grid-cols-3">
+          <div className="mt-8 grid gap-6 md:grid-cols-2">
             {govCards.map((card) => (
               <div
                 key={card.title}
@@ -256,6 +276,9 @@ export default async function RolesPage({
                 <h3 className="text-foreground text-lg font-semibold">
                   {card.title}
                 </h3>
+                <p className="text-muted-foreground mt-2 text-sm leading-relaxed">
+                  {card.desc}
+                </p>
                 <ul className="text-muted-foreground mt-4 space-y-2 text-sm leading-relaxed">
                   {card.points.map((point) => (
                     <li key={point} className="flex gap-2">
@@ -264,17 +287,17 @@ export default async function RolesPage({
                     </li>
                   ))}
                 </ul>
+                {card.linkLabel && (
+                  <Link
+                    href="/community/expert-advisory-committee"
+                    className="text-primary mt-5 inline-flex items-center gap-1.5 text-sm font-medium hover:underline"
+                  >
+                    {card.linkLabel}
+                    <ArrowRight className="size-4" />
+                  </Link>
+                )}
               </div>
             ))}
-          </div>
-          <div className="mt-6">
-            <Link
-              href="/community/expert-advisory-committee"
-              className="text-primary inline-flex items-center gap-1.5 text-sm font-medium hover:underline"
-            >
-              {t("eacLink")}
-              <ArrowRight className="size-4" />
-            </Link>
           </div>
         </div>
       </div>
