@@ -12,7 +12,7 @@ const docsLinks = [
 
 const communityLinks = [
   { key: "mailingLists", href: "https://lists.ivorysql.org" },
-  { key: "discord", href: "https://discord.gg/Fu3FRay" },
+  { key: "discord", href: "https://discord.gg/BBNjXKfcK" },
   { key: "twitter", href: "https://twitter.com/IvorySQL" },
 ];
 

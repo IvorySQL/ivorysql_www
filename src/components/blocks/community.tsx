@@ -39,7 +39,7 @@ const COMMUNITY_LINKS_DEF = [
   },
   {
     key: "discord",
-    href: "https://discord.gg/Fu3FRay",
+    href: "https://discord.gg/BBNjXKfcK",
     icon: MessageSquare,
   },
   {
