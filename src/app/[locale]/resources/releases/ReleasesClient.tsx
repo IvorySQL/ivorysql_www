@@ -5,6 +5,7 @@ import { useState } from "react";
 import { ChevronRight, FileText, Mail } from "lucide-react";
 import { useTranslations } from "next-intl";
 
+import { DiscordLink } from "@/components/blocks/discord-invitation";
 import { CURRENT_VERSIONS, HISTORICAL_VERSIONS } from "@/lib/releases";
 import { cn } from "@/lib/utils";
 
@@ -18,6 +19,7 @@ const HISTORY_PREVIEW = 10;
 
 export function ReleasesClient() {
   const t = useTranslations("ReleasesUI");
+  const td = useTranslations("DiscordInvitation");
   const [activeTab, setActiveTab] = useState<TabId>("current");
   const [showAllHistory, setShowAllHistory] = useState(false);
 
@@ -183,17 +185,27 @@ export function ReleasesClient() {
       )}
 
       {/* Contact */}
-      <div className="border-primary/20 bg-primary/5 flex flex-wrap items-center gap-3 rounded-xl border px-5 py-4">
-        <Mail className="text-primary size-4 shrink-0" />
-        <p className="text-muted-foreground text-sm">
-          {t("contactPrompt")}{" "}
-          <a
-            href="mailto:support@ivorysql.org"
-            className="text-primary font-semibold hover:underline"
-          >
-            {t("contactLink")}
-          </a>
-        </p>
+      <div className="border-primary/20 bg-primary/5 space-y-4 rounded-xl border px-5 py-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <Mail className="text-primary size-4 shrink-0" />
+          <p className="text-muted-foreground text-sm">
+            {t("contactPrompt")}{" "}
+            <a
+              href="mailto:support@ivorysql.org"
+              className="text-primary font-semibold hover:underline"
+            >
+              {t("contactLink")}
+            </a>
+          </p>
+        </div>
+        <div className="border-primary/20 flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-muted-foreground text-sm leading-relaxed">
+            {td("releases")}
+          </p>
+          <div className="flex shrink-0">
+            <DiscordLink />
+          </div>
+        </div>
       </div>
     </div>
   );

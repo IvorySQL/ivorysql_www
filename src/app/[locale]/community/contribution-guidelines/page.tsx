@@ -12,6 +12,7 @@ import {
 import type { Metadata } from "next";
 import { getTranslations } from "next-intl/server";
 
+import { DiscordLink } from "@/components/blocks/discord-invitation";
 import { Link } from "@/i18n/navigation";
 import { buildAlternates } from "@/lib/hreflang";
 
@@ -73,6 +74,8 @@ export default async function ContributionGuidelinesPage({
     locale,
     namespace: "ContributionGuidelinesPage",
   });
+
+  const td = await getTranslations({ locale, namespace: "DiscordInvitation" });
 
   const strongTag = (chunks: React.ReactNode) => (
     <strong className="text-foreground font-medium">{chunks}</strong>
@@ -351,6 +354,13 @@ export default async function ContributionGuidelinesPage({
               </li>
             ))}
           </ul>
+
+          <p className="text-muted-foreground mt-4 text-base leading-relaxed">
+            {td("contribution")}
+          </p>
+          <div className="mt-3">
+            <DiscordLink variant="outline" />
+          </div>
 
           <p className="text-muted-foreground mt-6 text-base leading-relaxed">
             {t.rich("needHelpFooter", { guide: guideTag })}

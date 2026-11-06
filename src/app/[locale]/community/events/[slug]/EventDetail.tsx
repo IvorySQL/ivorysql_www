@@ -6,6 +6,7 @@ import { ChevronLeft } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 
 import { MDXRenderer } from "@/app/[locale]/blog/[slug]/MDXRenderer";
+import { DiscordInvitation } from "@/components/blocks/discord-invitation";
 import { Link } from "@/i18n/navigation";
 import type { IvoryEventWithContent } from "@/lib/events";
 import { parseUTCDate } from "@/lib/utils";
@@ -146,6 +147,29 @@ export function EventDetail({
             <MDXRenderer content={event.content} />
           </div>
 
+          <DiscordInvitation context="event">
+            <div className="mb-2 w-full">
+              <h3 className="text-foreground text-sm font-semibold">
+                {t("joinCommunity.title")}
+              </h3>
+              <p className="text-muted-foreground mt-2 text-sm leading-relaxed">
+                {t("joinCommunity.description")}
+              </p>
+            </div>
+            <Link
+              href="/community/contribution-guidelines"
+              className="bg-primary text-primary-foreground hover:bg-primary/90 rounded-lg px-4 py-2 text-center text-sm font-medium transition-colors"
+            >
+              {tc("getStarted")}
+            </Link>
+            <Link
+              href="https://github.com/IvorySQL/IvorySQL"
+              className="border-border bg-background text-foreground hover:bg-muted rounded-lg border px-4 py-2 text-center text-sm font-medium transition-colors"
+            >
+              GitHub
+            </Link>
+          </DiscordInvitation>
+
           {/* Prev/Next Navigation */}
           {(prevEvent || nextEvent) && (
             <div className="mt-12 grid gap-6 sm:grid-cols-2">
@@ -236,32 +260,6 @@ export function EventDetail({
               </div>
             </div>
           )}
-
-          {/* CTA */}
-          <div className="bg-muted/30 mt-12 flex flex-wrap items-center justify-between gap-6 rounded-xl border-0 p-6">
-            <div>
-              <h3 className="text-foreground text-sm font-semibold">
-                {t("joinCommunity.title")}
-              </h3>
-              <p className="text-muted-foreground mt-2 text-sm">
-                {t("joinCommunity.description")}
-              </p>
-            </div>
-            <div className="flex shrink-0 gap-2">
-              <Link
-                href="/community/contribution-guidelines"
-                className="bg-primary text-primary-foreground hover:bg-primary/90 rounded-lg px-4 py-2 text-center text-sm font-medium transition-colors"
-              >
-                {tc("getStarted")}
-              </Link>
-              <Link
-                href="https://github.com/IvorySQL/IvorySQL"
-                className="border-border bg-background text-foreground hover:bg-muted rounded-lg border px-4 py-2 text-center text-sm font-medium transition-colors"
-              >
-                GitHub
-              </Link>
-            </div>
-          </div>
         </div>
       </div>
     </article>
