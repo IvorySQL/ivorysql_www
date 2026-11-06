@@ -1075,7 +1075,7 @@
       },
       {
         "label": "Community groups",
-        "value": "WeChat, Discord, and other chat groups"
+        "value": "WeChat and other chat groups"
       }
     ],
     "needHelpFooter": "If you are interested in code contributions but are not sure where to start, or if this is your first time contributing to IvorySQL, the <guide>detailed Contribution Guide</guide> will help you find a clear entry point and lower the barrier to participation."
@@ -1202,5 +1202,14 @@
     "criteriaLabel": "How to get here",
     "contribTypesNote": "Not just code: documentation translation, answering questions, organizing events, and open-source advocacy all count as contributions.",
     "introLine2": "Join as a User and grow step by step along a clear five-level path."
+  },
+  "DiscordInvitation": {
+    "join": "Join Discord",
+    "download": "Questions about installation or using IvorySQL? Join the community on Discord.",
+    "releases": "Want to discuss release changes or upgrading? Join the community on Discord.",
+    "contribution": "Not sure where to start contributing? Discuss your ideas with the community on Discord.",
+    "blog": "Have thoughts on this article? Discuss them with the IvorySQL community on Discord.",
+    "news": "Join Discord to discuss the latest IvorySQL developments with the community.",
+    "event": "Keep the conversation going with the community on Discord."
   }
 }
