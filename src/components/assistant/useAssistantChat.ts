@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { readAssistantStream } from "@/lib/assistant/client-stream";
+import { prepareContext } from "@/lib/assistant/context";
 import { createMessageId } from "@/lib/assistant/message-id";
 import {
   getAssistantStorageKey,
@@ -86,12 +87,7 @@ export function useAssistantChat(
       activeAnswerRef.current = answerId;
       setIsStreaming(true);
 
-      const providerMessages = conversation
-        .filter(
-          (message) => message.role === "user" || message.status === "complete",
-        )
-        .map(({ role, content }) => ({ role, content }))
-        .slice(-20);
+      const providerMessages = prepareContext(locale, conversation);
 
       try {
         const response = await fetch("/api/assistant", {

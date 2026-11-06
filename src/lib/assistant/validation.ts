@@ -1,12 +1,14 @@
 import {
+  MAX_BODY_BYTES,
+  MAX_MESSAGES,
+  MAX_USER_LENGTH,
+  MAX_ASSISTANT_LENGTH,
+} from "./limits.ts";
+import {
   type AssistantLocale,
   type AssistantMessage,
   type AssistantRequest,
 } from "./types.ts";
-
-const MAX_BODY_BYTES = 32 * 1024;
-const MAX_MESSAGES = 20;
-const MAX_CONTENT_LENGTH = 2_000;
 
 type ValidationErrorCode =
   | "BODY_TOO_LARGE"
@@ -23,10 +25,7 @@ export type ValidationResult =
   | { ok: true; value: AssistantRequest }
   | { ok: false; code: ValidationErrorCode; message: string };
 
-function failure(
-  code: ValidationErrorCode,
-  message: string,
-): ValidationResult {
+function failure(code: ValidationErrorCode, message: string): ValidationResult {
   return { ok: false, code, message };
 }
 
@@ -43,7 +42,7 @@ export function validateAssistantRequest(
   bodyBytes: number,
 ): ValidationResult {
   if (bodyBytes > MAX_BODY_BYTES) {
-    return failure("BODY_TOO_LARGE", "Request body exceeds 32 KiB.");
+    return failure("BODY_TOO_LARGE", "Request body exceeds 256 KiB.");
   }
 
   if (!isRecord(raw)) {
@@ -81,10 +80,12 @@ export function validateAssistantRequest(
       return failure("EMPTY_CONTENT", "Message content cannot be empty.");
     }
 
-    if (Array.from(message.content).length > MAX_CONTENT_LENGTH) {
+    const limit =
+      message.role === "user" ? MAX_USER_LENGTH : MAX_ASSISTANT_LENGTH;
+    if (Array.from(message.content).length > limit) {
       return failure(
         "CONTENT_TOO_LONG",
-        "Message content cannot exceed 2,000 characters.",
+        `Message content cannot exceed ${limit} characters.`,
       );
     }
 

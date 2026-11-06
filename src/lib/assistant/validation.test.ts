@@ -38,7 +38,7 @@ describe("validateAssistantRequest", () => {
   });
 
   it("counts Unicode code points rather than UTF-16 halves", () => {
-    const content = "数".repeat(2_000);
+    const content = "数".repeat(16_000);
     expect(
       validateAssistantRequest(
         { ...valid, messages: [{ role: "user", content }] },
@@ -47,7 +47,7 @@ describe("validateAssistantRequest", () => {
     ).toBe(true);
   });
 
-  it("rejects 21 messages, 2,001 characters, and more than 32 KiB", () => {
+  it("rejects 21 messages, 16,001 characters, and more than 256 KiB", () => {
     expect(
       validateAssistantRequest(
         { ...valid, messages: Array(21).fill(valid.messages[0]) },
@@ -58,12 +58,12 @@ describe("validateAssistantRequest", () => {
       validateAssistantRequest(
         {
           ...valid,
-          messages: [{ role: "user", content: "x".repeat(2_001) }],
+          messages: [{ role: "user", content: "x".repeat(16_001) }],
         },
         3_000,
       ),
     ).toMatchObject({ ok: false, code: "CONTENT_TOO_LONG" });
-    expect(validateAssistantRequest(valid, 32 * 1024 + 1)).toMatchObject({
+    expect(validateAssistantRequest(valid, 256 * 1024 + 1)).toMatchObject({
       ok: false,
       code: "BODY_TOO_LARGE",
     });

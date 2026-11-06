@@ -6,6 +6,7 @@ import { Send, Square } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { MAX_USER_LENGTH } from "@/lib/assistant/limits";
 
 type AssistantComposerProps = {
   value: string;
@@ -48,7 +49,7 @@ export function AssistantComposer({
           aria-label={placeholder}
           className="max-h-32 min-h-10 resize-none"
           disabled={disabled || isStreaming}
-          maxLength={2000}
+          maxLength={MAX_USER_LENGTH}
           placeholder={placeholder}
           rows={1}
           value={value}
