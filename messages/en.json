@@ -960,6 +960,8 @@
   },
   "ContributionGuidelinesPage": {
     "metaTitle": "Contribution Guidelines",
+    "processDiagramAlt": "IvorySQL contribution process diagram",
+    "processSummary": "With this complete closed-loop collaboration mechanism, IvorySQL achieves a full-cycle loop of issue response -> development contribution -> quality assurance -> release feedback, driving the sustained healthy evolution of the project.",
     "metaDescription": "How to contribute to IvorySQL - from code patches to documentation, testing, and community participation.",
     "ogTitle": "IvorySQL Contribution Guidelines",
     "backToHome": "Back to Home",
