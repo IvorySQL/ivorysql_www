@@ -302,7 +302,10 @@
       }
     },
     "contributeOnGithub": "在 GitHub 上贡献",
-    "contributionGuidelines": "贡献指南"
+    "contributionGuidelines": "贡献指南",
+    "discordInviteTitle": "加入 IvorySQL Discord 社区",
+    "discordInviteDescription": "与开发者和用户实时交流，获取使用与开发方面的帮助，并第一时间跟进项目动态。",
+    "discordInviteCta": "打开 Discord 邀请"
   },
   "BusinessValue": {
     "heading": "为真实业务挑战而生",
