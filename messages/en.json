@@ -326,7 +326,10 @@
       }
     },
     "contributeOnGithub": "Contribute on GitHub",
-    "contributionGuidelines": "Contribution Guidelines"
+    "contributionGuidelines": "Contribution Guidelines",
+    "discordInviteTitle": "Join the IvorySQL Discord",
+    "discordInviteDescription": "Chat with developers and users, get implementation help, and follow project news in real time.",
+    "discordInviteCta": "Open Discord invite"
   },
   "BusinessValue": {
     "heading": "Built for Real Business Challenges",
