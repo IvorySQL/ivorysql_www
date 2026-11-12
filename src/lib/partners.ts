@@ -103,12 +103,6 @@ export const partnerCategories: PartnerCategory[] = [
         description: "Apache CloudBerry — cloud-native data warehouse",
       },
       {
-        name: "IFClub",
-        logo: "/images/partners/ifclub.png",
-        url: "https://www.ifclub.org/",
-        description: "Open-source infrastructure community",
-      },
-      {
         name: "Motianlun",
         logo: "/images/partners/motianlun.png",
         url: "https://www.modb.pro/",
