@@ -15,6 +15,7 @@ import { useTranslations } from "next-intl";
 import { DatabaseDownload } from "./DatabaseDownload";
 import { DownloadTable, type DownloadItem } from "./DownloadTable";
 
+import { DiscordLink } from "@/components/blocks/discord-invitation";
 import { GITHUB_RELEASES_URL, type DbRelease } from "@/lib/db-packages";
 
 // ─── Data ────────────────────────────────────────────────────────────────────
@@ -113,6 +114,7 @@ function GithubReleasesFallback() {
 
 export function DownloadClient({ releases }: { releases: DbRelease[] }) {
   const t = useTranslations("DownloadUI");
+  const td = useTranslations("DiscordInvitation");
 
   return (
     <div className="space-y-12">
@@ -154,17 +156,27 @@ export function DownloadClient({ releases }: { releases: DbRelease[] }) {
       </section>
 
       {/* Contact */}
-      <div className="border-primary/20 bg-primary/5 flex flex-wrap items-center gap-3 rounded-xl border px-5 py-4">
-        <Mail className="text-primary size-4 shrink-0" />
-        <p className="text-muted-foreground text-sm">
-          {t("contact.needHelp")}{" "}
-          <a
-            href="mailto:support@ivorysql.org"
-            className="text-primary font-semibold hover:underline"
-          >
-            support@ivorysql.org
-          </a>
-        </p>
+      <div className="border-primary/20 bg-primary/5 space-y-4 rounded-xl border px-5 py-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <Mail className="text-primary size-4 shrink-0" />
+          <p className="text-muted-foreground text-sm">
+            {t("contact.needHelp")}{" "}
+            <a
+              href="mailto:support@ivorysql.org"
+              className="text-primary font-semibold hover:underline"
+            >
+              support@ivorysql.org
+            </a>
+          </p>
+        </div>
+        <div className="border-primary/20 flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-muted-foreground text-sm leading-relaxed">
+            {td("download")}
+          </p>
+          <div className="flex shrink-0">
+            <DiscordLink />
+          </div>
+        </div>
       </div>
     </div>
   );

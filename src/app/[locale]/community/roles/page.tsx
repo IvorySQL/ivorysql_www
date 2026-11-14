@@ -2,6 +2,7 @@ import { ArrowRight, ChevronLeft, Sparkles, UserPlus } from "lucide-react";
 import type { Metadata } from "next";
 import { getTranslations } from "next-intl/server";
 
+import { DiscordLink } from "@/components/blocks/discord-invitation";
 import { Link } from "@/i18n/navigation";
 import { buildAlternates } from "@/lib/hreflang";
 
@@ -95,7 +96,7 @@ export default async function RolesPage({
 
           <div className="relative mt-8">
             {/* connector line */}
-            <div className="bg-primary/20 absolute left-0 right-0 top-1/2 hidden h-0.5 -translate-y-1/2 md:block" />
+            <div className="bg-primary/20 absolute top-1/2 right-0 left-0 hidden h-0.5 -translate-y-1/2 md:block" />
             <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-5">
               {steps.map((step) => (
                 <a
@@ -193,8 +194,11 @@ export default async function RolesPage({
                   </p>
                   <ul className="text-muted-foreground mt-2 grid gap-x-8 gap-y-2 sm:grid-cols-2">
                     {step.points.map((point) => (
-                      <li key={point} className="flex items-start gap-2 text-sm">
-                        <span className="text-emerald-600 mt-0.5 dark:text-emerald-400">
+                      <li
+                        key={point}
+                        className="flex items-start gap-2 text-sm"
+                      >
+                        <span className="mt-0.5 text-emerald-600 dark:text-emerald-400">
                           ✓
                         </span>
                         <span>{point}</span>
@@ -255,18 +259,17 @@ export default async function RolesPage({
               >
                 {t("contactLabel")}
               </a>
+              <DiscordLink variant="outline" />
             </div>
           </div>
         </div>
 
         {/* ===== Governance half ===== */}
-        <div className="mx-auto mt-20 max-w-5xl border-t border-border pt-14">
+        <div className="border-border mx-auto mt-20 max-w-5xl border-t pt-14">
           <h2 className="text-foreground text-xl font-semibold tracking-tight md:text-2xl">
             {t("govTitle")}
           </h2>
-          <p className="text-muted-foreground mt-2 text-sm">
-            {t("govIntro")}
-          </p>
+          <p className="text-muted-foreground mt-2 text-sm">{t("govIntro")}</p>
           <div className="mt-8 grid gap-6 md:grid-cols-2">
             {govCards.map((card) => (
               <div

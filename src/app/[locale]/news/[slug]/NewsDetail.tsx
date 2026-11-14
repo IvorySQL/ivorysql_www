@@ -5,6 +5,7 @@ import { useTranslations } from "next-intl";
 
 import { NewsContentRenderer } from "./NewsContentRenderer";
 
+import { DiscordInvitation } from "@/components/blocks/discord-invitation";
 import { Link } from "@/i18n/navigation";
 import type { NewsItemWithContent } from "@/lib/news";
 
@@ -72,6 +73,10 @@ export function NewsDetail({ item, prevItem, nextItem }: NewsDetailProps) {
         {/* Content */}
         <div className="mx-auto mt-12 max-w-3xl">
           <NewsContentRenderer content={item.content} />
+        </div>
+
+        <div className="mx-auto max-w-3xl">
+          <DiscordInvitation context="news" />
         </div>
 
         {/* Divider */}

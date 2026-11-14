@@ -1101,7 +1101,7 @@
       },
       {
         "label": "社区群组",
-        "value": "微信、Discord 等聊天群"
+        "value": "微信等聊天群"
       }
     ],
     "needHelpFooter": "如果你对代码贡献感兴趣，但暂时还没有明确的切入点，或者这是你第一次参与 IvorySQL，<guide>详细贡献指南</guide>将帮助你找到清晰的起点，降低参与门槛。"
@@ -1228,5 +1228,14 @@
     "criteriaLabel": "认定标准",
     "contribTypesNote": "不只是代码：文档翻译、社区答疑、活动组织、开源布道，同样计入贡献。",
     "introLine2": "从 User 加入，沿着清晰可见的五级路径逐级成长。"
+  },
+  "DiscordInvitation": {
+    "join": "加入 Discord",
+    "download": "安装或使用遇到问题？加入 Discord，与 IvorySQL 社区交流。",
+    "releases": "想了解版本变化或讨论升级问题？加入 Discord，与社区交流。",
+    "contribution": "不确定从哪里开始贡献？加入 Discord，与社区讨论你的想法。",
+    "blog": "对本文有想法？加入 Discord，与 IvorySQL 社区交流。",
+    "news": "加入 Discord，与社区交流 IvorySQL 最新进展。",
+    "event": "加入 Discord，与社区成员继续交流。"
   }
 }
