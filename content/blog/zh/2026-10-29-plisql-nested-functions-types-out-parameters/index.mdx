@@ -1,0 +1,420 @@
+---
+slug: "plisql-nested-functions-types-out-parameters"
+title: "PL/iSQL 迁移的第二道坎：嵌套子函数、%TYPE、%ROWTYPE 与 OUT 参数实测"
+date: "2026-10-29"
+author: "qqtq"
+category: "IvorySQL"
+image: "/images/blog/covers/plisql-migration.webp"
+tags: ["Oracle", "PL/iSQL", "Migration"]
+description: "在 IvorySQL 5.4 上验证 PL/iSQL 会话模式、嵌套子函数、类型属性与 OUT 参数，并记录 5.6 复测差异。"
+---
+
+> 作者简介：柒柒天晴，现居乌鲁木齐，数据库从业者。记录分享数据库实践，持续学习。
+
+## 摘要
+
+导入顺序还能靠 FORCE VIEW 兜，真正难搬的是过程代码。存量 PL/SQL 里遍地都是嵌套子函数、`%TYPE` / `%ROWTYPE` 属性、OUT 出参，这些写法直接搬到 `plpgsql` 里，有的能跑、有的当场报语法错。IvorySQL 5.4 的 PL/iSQL 声称把这些 Oracle 习惯带到 PostgreSQL 上，到底兑现了多少？我在一台 Rocky Linux 9.5 上用官方 yum 仓库装好二进制 RPM（零源码编译），挨个实测了一遍，安装和会话里的几个坑集中在文末附录。
+
+## 环境与软件说明
+
+| 项目 | 值 |
+| --- | --- |
+| 操作系统 | Rocky Linux 9.5 |
+| 数据库版本 | PostgreSQL 18.4 (IvorySQL 5.4，RPM 包 ivorysql5-5.4-a45b045) |
+| 安装目录 | /usr/ivory-5（RPM 默认路径） |
+| 初始化方式 | `initdb -D /usr/ivory-5/data`（未指定 `-m`，双模式实例） |
+| 监听端口 | 5432（PG 端口，会话默认 pg 模式，本地 trust 认证，unix socket 在 /tmp）、1521（Oracle 专用端口，`ivorysql.port` 默认值） |
+| 测试入口 | 5432（正文全序列）、1521（补测小节） |
+
+> PL/iSQL 不用额外 CREATE EXTENSION：`pg_language` 里已有 plisql，`/usr/ivory-5/lib/postgresql/` 下有 `plisql.so`。真正要注意的是模式入口：默认 initdb 生成的是双模式实例，1521 连入自动是 oracle 模式，5432 连入默认 pg。从 5432 进入、会话处在 pg 状态时，PL/iSQL 的创建、调用、匿名块都会被直接拒绝（空体匿名块除外，见补测）。正文第一道门讲的就是它。
+>
+> 版本与复现：本文结论基于 IvorySQL 5.4（内核 PostgreSQL 18.4）。官方 yum 仓库目前默认给的是 5.6（内核 PostgreSQL 18.6），照本文复现要钉版本装：`dnf install -y ivorysql5-5.4-a45b045`。正文回显以 5.4 环境为准；5.6 上原样复测过一遍，结果和差异单列在“5.6 上的复测与差异”一节。
+
+## 实测：会话门槛与 PL/iSQL 三件套
+
+先建一张业务表，后面所有函数都围着它转。下面的测试都从 5432 连入，所以每个会话先切 oracle；如果改连 1521，这几行 `SET` 都可以省掉：
+
+```sql
+SET ivorysql.compatible_mode TO 'oracle';
+CREATE TABLE t_emp (employee_id int PRIMARY KEY, employee_name text, salary numeric(10,2), dept_id int);
+INSERT INTO t_emp VALUES (1, 'Alice', 12000.00, 10), (2, 'Bob', 8000.00, 20);
+SELECT * FROM t_emp ORDER BY employee_id;
+
+ employee_id | employee_name |  salary  | dept_id 
+-------------+---------------+----------+---------
+           1 | Alice         | 12000.00 |      10
+           2 | Bob           |  8000.00 |      20
+(2 rows)
+```
+
+### 第一道门：从 5432 连入时，plisql 函数要求 oracle 模式
+
+换一个新会话（不执行任何 `SET`），`SHOW` 出来是 pg：
+
+```sql
+SHOW ivorysql.compatible_mode;
+
+ ivorysql.compatible_mode 
+--------------------------
+ pg
+(1 row)
+
+CREATE OR REPLACE FUNCTION f_tax_pgmode(p_salary numeric) RETURNS numeric LANGUAGE plisql AS $$ BEGIN RETURN p_salary * 0.1; END; $$;
+
+ERROR:  when ivorysql.compatible_mode is set to pg, any plisql procedural language function statement is not supported.
+LINE 1: ...ETURNS numeric LANGUAGE plisql AS $$ BEGIN RETURN p_salary *...
+                                                             ^
+```
+
+**现象**：报错把条件写得很明白——拦路的就是兼容模式。同样的门槛在 FORCE VIEW 上也存在，只是那边没有专门提示，pg 会话里直接报 `syntax error at or near "FORCE"`（没有 Oracle 解析器，语法都过不去）。而且它不止卡创建：会话一旦切回 pg，已经建好的 PL/iSQL 函数连 SELECT、过程连 CALL 都被拒，带实质语句的匿名块也执行不了（空体匿名块除外；回显见下文“补测：切回 pg 模式再调用”一节）。要跑 PL/iSQL，会话就得待在 oracle 模式——从 5432 进来靠 `SET`，从 1521 进来天然满足。
+
+### 嵌套子函数
+
+Oracle 的存储过程里辅助逻辑习惯写成过程内部的局部子函数，PL/iSQL 支持原样写法：
+
+```sql
+CREATE OR REPLACE FUNCTION f_tax(p_salary numeric) RETURNS numeric LANGUAGE plisql AS $$ DECLARE FUNCTION f_band(s numeric) RETURN numeric IS BEGIN IF s >= 10000 THEN RETURN s * 0.2; ELSE RETURN s * 0.1; END IF; END; BEGIN RETURN f_band(p_salary); END; $$;
+SELECT f_tax(12000.00), f_tax(8000.00);
+
+  f_tax   |  f_tax  
+----------+---------
+ 2400.000 | 800.000
+(1 row)
+
+CREATE OR REPLACE FUNCTION f_outer_ref(p_salary numeric) RETURNS numeric LANGUAGE plisql AS $$ DECLARE v_rate numeric := 0.1; FUNCTION f_adjust(s numeric) RETURN numeric IS BEGIN RETURN s * v_rate; END; BEGIN RETURN f_adjust(p_salary); END; $$;
+SELECT f_outer_ref(10000.00);
+
+ f_outer_ref 
+-------------
+    1000.000
+(1 row)
+```
+
+**现象**：`DECLARE` 段里声明 `FUNCTION ... IS ... END`，函数体直接调用，分档逻辑正常（12000 走 20% 档、8000 走 10% 档）；内部子函数还能读外层 `DECLARE` 的变量（v_rate），闭包写法同样成立。这两段逻辑原样从 Oracle 搬过来就能跑。
+
+闭包不是巧合，是设计如此。官方设计文档写明：子函数编译进父函数的 datum 表，执行前把外层变量 fork 一份给子函数读，返回时再把需要回写的变量写回父函数。既然是编译进父函数，它也就不单独注册进 pg_proc：按附录第 3 条的方式统计 plisql 对象是 7 个，f_band 和 f_adjust 都不在内。
+
+### %TYPE 属性
+
+`%TYPE` 让参数和变量跟随表的列类型，创建时会打两条 NOTICE，明确告诉你引用被解析成了什么：
+
+```sql
+CREATE OR REPLACE FUNCTION f_emp_salary(p_id t_emp.employee_id%TYPE) RETURNS t_emp.salary%TYPE LANGUAGE plisql AS $$ DECLARE v_sal t_emp.salary%TYPE; BEGIN SELECT salary INTO v_sal FROM t_emp WHERE employee_id = p_id; RETURN v_sal; END; $$;
+
+NOTICE:  type reference t_emp.employee_id%TYPE converted to pg_catalog.int4
+NOTICE:  type reference t_emp.salary%TYPE converted to pg_catalog.numeric
+CREATE FUNCTION
+
+SELECT f_emp_salary(1);
+
+ f_emp_salary 
+--------------
+     12000.00
+(1 row)
+```
+
+`\df+` 的签名列保留 `%TYPE` 记号：
+
+```sql
+\df+ f_emp_salary
+ Schema |     Name     | Result data type  |     Argument data types     | Type | Volatility | Parallel |  Owner   | Security | Leakproof? | Access privileges | Language | Internal name | Description 
+--------+--------------+-------------------+-----------------------------+------+------------+----------+----------+----------+------------+-------------------+----------+---------------+-------------
+ public | f_emp_salary | t_emp.salary%TYPE | p_id t_emp.employee_id%TYPE | func | volatile   | unsafe   | ivorysql | definer  | no         |                   | plisql   |               | 
+(1 row)
+```
+
+列类型改了，函数不用重建：
+
+```sql
+ALTER TABLE t_emp ALTER COLUMN salary TYPE numeric(14,4);
+SELECT f_emp_salary(1);
+
+ f_emp_salary 
+--------------
+   12000.0000
+(1 row)
+```
+
+**现象**：`%TYPE` 解析到的是列的基础类型——NOTICE 写着 converted to pg_catalog.int4 / pg_catalog.numeric，不带 `numeric(10,2)` 这样的精度限定，`\df+` 的签名列则保留 `%TYPE` 记号。因为解析结果没有精度，返回值的小数位数跟着存储值走：列改成 numeric(14,4) 后函数不用重建，原样显示四位小数。IvorySQL 官方设计文档对机制有说明：解析时把函数对 `表.列` 的依赖记进 pg_depend，列类型变更时作废函数缓存、下次调用强制重编译，所以引用不会停留在旧类型上。
+
+### %ROWTYPE 属性
+
+`%ROWTYPE` 表示整行类型，能当函数或过程的参数，也能当局部变量：
+
+```sql
+CREATE OR REPLACE FUNCTION f_row_salary(p_row t_emp%ROWTYPE) RETURNS numeric(12,2) LANGUAGE plisql AS $$ BEGIN RETURN p_row.salary + 100; END; $$;
+SELECT f_row_salary(t_emp) FROM t_emp WHERE employee_id = 1;
+
+ f_row_salary 
+--------------
+   12100.0000
+(1 row)
+
+CREATE OR REPLACE FUNCTION f_row_var(p_id int) RETURNS text LANGUAGE plisql AS $$ DECLARE v_row t_emp%ROWTYPE; BEGIN SELECT * INTO v_row FROM t_emp WHERE employee_id = p_id; RETURN v_row.employee_name || ' dept=' || v_row.dept_id::text; END; $$;
+SELECT f_row_var(2);
+
+  f_row_var  
+-------------
+ Bob dept=20
+(1 row)
+```
+
+表加列之后，存量函数照常工作：
+
+```sql
+ALTER TABLE t_emp ADD COLUMN email text;
+UPDATE t_emp SET email = 'alice@example.com' WHERE employee_id = 1;
+SELECT f_row_var(1);
+
+   f_row_var   
+---------------
+ Alice dept=10
+(1 row)
+
+DO $$ DECLARE v_row t_emp%ROWTYPE; BEGIN SELECT * INTO v_row FROM t_emp WHERE employee_id = 1; RAISE NOTICE 'name=%, email=%', v_row.employee_name, v_row.email; END; $$ LANGUAGE plisql;
+
+NOTICE:  name=Alice, email=alice@example.com
+DO
+```
+
+**现象**：整行传参用 `SELECT f_row_salary(t_emp)`，把整行作为一个参数传给 p_row；`SELECT * INTO v_row` 把整行装进变量后按列名访问。加了 email 列之后两个函数照常工作，匿名块里的 `%ROWTYPE` 变量甚至直接取到新列——按列名解析字段，加列不影响存量函数。
+
+顺带解释输出里的位数：f_row_salary 声明的是 `RETURNS numeric(12,2)`，输出却是 12100.0000。四位小数的来源是 %TYPE 那节把 salary 列改成了 numeric(14,4)，后文 salary 出现的多位小数都来自这次改列；而声明的返回类型精度并不会限制返回值的实际位数——我在一台原生 PostgreSQL 13.23 上对照过，SQL 函数和 plpgsql 函数写同样的 numeric(12,2)，返回值都是 12100.0000。该行为与版本无关：pg_proc 里只存返回类型的 OID（prorettype），根本没有精度这一列。这是上游既有行为，不是 PL/iSQL 的怪癖。
+
+### OUT 参数
+
+```sql
+CREATE OR REPLACE PROCEDURE p_get_emp(p_id int, p_name OUT text, p_salary OUT numeric) LANGUAGE plisql AS $$ BEGIN SELECT employee_name, salary INTO p_name, p_salary FROM t_emp WHERE employee_id = p_id; END; $$;
+DO $$ DECLARE v_name text; v_salary numeric; BEGIN CALL p_get_emp(1, v_name, v_salary); RAISE NOTICE 'name=%, salary=%', v_name, v_salary; END; $$ LANGUAGE plisql;
+
+NOTICE:  name=Alice, salary=12000.0000
+DO
+
+CREATE OR REPLACE PROCEDURE p_noassign(p_ret OUT int) LANGUAGE plisql AS $$ BEGIN NULL; END; $$;
+DO $$ DECLARE v_ret int := 99; BEGIN CALL p_noassign(v_ret); RAISE NOTICE 'ret=%', v_ret; END; $$ LANGUAGE plisql;
+
+NOTICE:  ret=<NULL>
+DO
+
+CALL p_get_emp(1, NULL, NULL);
+
+ p_name |  p_salary  
+--------+------------
+ Alice  | 12000.0000
+(1 row)
+```
+
+**现象**：匿名块里 `CALL` 把 OUT 值接回来；未赋值的 OUT 参数以 NULL 回传（调用前 v_ret 明明是 99，CALL 回来变成 `<NULL>`）。psql 里直接 CALL 也支持，OUT 位置给字面量，结果按表格输出。
+
+### plpgsql 对照：哪些真是门槛
+
+同样的函数体把 LANGUAGE 换成 plpgsql 再跑一遍。这里沿用当前 oracle 会话，是因为下面有一条 `%ROWTYPE` 参数要先由 Oracle 解析器解析成行类型（原因见后文）；plpgsql 本身不挑模式，pg 会话里的创建与调用见补测。
+
+```sql
+CREATE OR REPLACE FUNCTION f_tax_plpgsql(p_salary numeric) RETURNS numeric LANGUAGE plpgsql AS $$ DECLARE FUNCTION f_band(s numeric) RETURN numeric IS BEGIN IF s >= 10000 THEN RETURN s * 0.2; ELSE RETURN s * 0.1; END IF; END; BEGIN RETURN f_band(p_salary); END; $$;
+
+ERROR:  syntax error at or near "numeric"
+LINE 1: ... LANGUAGE plpgsql AS $$ DECLARE FUNCTION f_band(s numeric) R...
+                                                             ^
+CONTEXT:  invalid type name "f_band(s numeric) RETURN numeric IS BEGIN IF s >= 10000 THEN RETURN s * 0.2"
+
+CREATE OR REPLACE FUNCTION f_emp_salary_pg(p_id t_emp.employee_id%TYPE) RETURNS t_emp.salary%TYPE LANGUAGE plpgsql AS $$ DECLARE v_sal t_emp.salary%TYPE; BEGIN SELECT salary INTO v_sal FROM t_emp WHERE employee_id = p_id; RETURN v_sal; END; $$;
+
+NOTICE:  type reference t_emp.employee_id%TYPE converted to pg_catalog.int4
+NOTICE:  type reference t_emp.salary%TYPE converted to pg_catalog.numeric
+CREATE FUNCTION
+
+CREATE OR REPLACE FUNCTION f_row_salary_pg(p_row t_emp%ROWTYPE) RETURNS numeric(12,2) LANGUAGE plpgsql AS $$ BEGIN RETURN p_row.salary + 100; END; $$;
+SELECT f_row_salary_pg(t_emp) FROM t_emp WHERE employee_id = 1;
+
+ f_row_salary_pg 
+-----------------
+      12100.0000
+(1 row)
+
+CREATE OR REPLACE FUNCTION f_row_var_pg(p_id int) RETURNS text LANGUAGE plpgsql AS $$ DECLARE v_row t_emp%ROWTYPE; BEGIN SELECT * INTO v_row FROM t_emp WHERE employee_id = p_id; RETURN v_row.employee_name; END; $$;
+SELECT f_row_var_pg(2);
+
+ f_row_var_pg 
+---------------
+ Bob
+(1 row)
+
+CREATE OR REPLACE PROCEDURE p_get_emp_pg(p_id int, p_name OUT text, p_salary OUT numeric) LANGUAGE plpgsql AS $$ BEGIN SELECT employee_name, salary INTO p_name, p_salary FROM t_emp WHERE employee_id = p_id; END; $$;
+DO $$ DECLARE v_name text; v_salary numeric; BEGIN CALL p_get_emp_pg(1, v_name, v_salary); RAISE NOTICE 'name=%, salary=%', v_name, v_salary; END; $$ LANGUAGE plpgsql;
+
+NOTICE:  name=Alice, salary=12000.0000
+DO
+```
+
+**现象**：plpgsql 的 DECLARE 段把 `FUNCTION f_band(s numeric)` 当成变量声明去解析类型，当场语法错——嵌套子函数是硬门槛，这类过程迁移时必须先把内部子函数拆到外层。`%TYPE` 和 `OUT` 在 plpgsql 里原生就有，照常工作，不用动。
+
+这里有个容易被回显误导的点：上面 `f_row_salary_pg(p_row t_emp%ROWTYPE)` 能建，是因为它跑在 oracle 会话里，`t_emp%ROWTYPE` 由 IvorySQL 的 Oracle 解析器先解析成行类型，plpgsql 拿到的已经是解析后的签名。换到 pg 会话（等价于原生 PostgreSQL）重建同一个函数，参数位置的 `%ROWTYPE` 直接语法错：
+
+```sql
+CREATE OR REPLACE FUNCTION f_row_salary_pg2(p_row t_emp%ROWTYPE) RETURNS numeric(12,2) LANGUAGE plpgsql AS $$ BEGIN RETURN p_row.salary + 100; END; $$;
+
+ERROR:  syntax error at or near "%"
+LINE 1: ...E OR REPLACE FUNCTION f_row_salary_pg2(p_row t_emp%ROWTYPE) ...
+                                                             ^
+```
+
+改成表行类型即可，语义不变：
+
+```sql
+CREATE OR REPLACE FUNCTION f_row_salary_pg3(p_row t_emp) RETURNS numeric(12,2) LANGUAGE plpgsql AS $$ BEGIN RETURN p_row.salary + 100; END; $$;
+SELECT f_row_salary_pg3(t_emp) FROM t_emp WHERE employee_id = 1;
+
+ f_row_salary_pg3 
+------------------
+       12100.0000
+(1 row)
+```
+
+`%ROWTYPE` 只作局部变量时没有这个问题——`v_row t_emp%ROWTYPE` 在 pg 会话里照常建、照常取值。所以落到 plpgsql 要改的是两处：嵌套子函数拆到外层，`%ROWTYPE` 参数改成表行类型。
+
+前面说“门槛不止卡创建”。换个新会话，开头 SHOW 一下——从 5432 连入默认就是 pg，在这个状态把两边的对象再调用一遍：
+
+### 补测：切回 pg 模式再调用
+
+```sql
+SHOW ivorysql.compatible_mode;
+
+ ivorysql.compatible_mode 
+--------------------------
+ pg
+(1 row)
+
+DO $$ BEGIN NULL; END; $$ LANGUAGE plisql;
+DO
+
+DO $$ DECLARE v int := 42; BEGIN RAISE NOTICE 'anon v=%', v; END; $$ LANGUAGE plisql;
+
+ERROR:  when ivorysql.compatible_mode is set to pg, any plisql procedural language function statement is not supported.
+LINE 1: DO $$ DECLARE v int := 42; BEGIN RAISE NOTICE 'anon v=%', v;...
+                               ^
+
+SELECT f_tax(12000.00);
+
+ERROR:  when ivorysql.compatible_mode is pg, can't execute a plisql procedural-language function
+LINE 1: SELECT f_tax(12000.00);
+               ^
+
+SELECT f_emp_salary_pg(1);
+
+ f_emp_salary_pg
+-----------------
+      12000.0000
+(1 row)
+
+CALL p_get_emp(1, NULL, NULL);
+
+ERROR:  when ivorysql.compatible_mode is pg, can't execute a plisql procedural-language function
+LINE 1: CALL p_get_emp(1, NULL, NULL);
+             ^
+```
+
+**现象**：门槛落在 PL/iSQL 语句上，不是落在语言登记上——同一个 pg 会话里，plpgsql 的函数照常调用，已建好的 plisql 函数连 SELECT、过程连 CALL 都被拒。另外还有一个边界情况：pg 模式下空体 `DO $$ BEGIN NULL; END; $$ LANGUAGE plisql;` 反而能过，块里有实质语句才被拒，和报错文案里的“函数语句”三个字对得上。所以在 5432 的 pg 会话里，“建函数被拒”只是门槛的一半：切模式之前建的 PL/iSQL 资产，在这个会话里一个都调不起来——对象还在库里，卡的是会话模式。
+
+### 补测：Oracle 专用端口 1521 入口
+
+默认 initdb 的实例同时监听 5432 和 1521（`ivorysql.port` 默认值），从 1521 连入的新会话直接就是 oracle 模式，不需要任何 `SET`：
+
+```sql
+SHOW ivorysql.compatible_mode;
+
+ ivorysql.compatible_mode 
+--------------------------
+ oracle
+(1 row)
+
+CREATE OR REPLACE FUNCTION f_probe_1521(p int) RETURN int IS BEGIN RETURN p + 1; END;
+SELECT f_probe_1521(41);
+
+ f_probe_1521 
+--------------
+           42
+(1 row)
+```
+
+**现象**：同一实例、同一套 PL/iSQL 语法，从 1521 连入，`SET` 都省了；两个入口连的是同一个库，模式只按连接入口区分。`initdb -m pg` 初始化的实例不监听这个端口，那时就只剩 5432 一条路。
+
+## 5.6 上的复测与差异
+
+官方仓库默认给的是 5.6（内核 PostgreSQL 18.6）。钉版本装好之后，我把全文的测试在 5.6 上原样复测过一遍（5432 入口的序列照旧，1521 入口另测）：数值和 PL/iSQL 各语句的结果完全一致，正文的结论换到 5.6 同样成立；双端口行为也一致，默认 initdb 后 5432 默认 pg、1521 自动 oracle。要留意的差异有两处。
+
+**一是 `compatible_mode` 的持久化被禁（PR #1372）。** 想给默认模式一劳永逸，`ALTER USER/ROLE/DATABASE SET` 在两个版本上都走不通，只是失败方式不同。5.6 上直接报错：
+
+```sql
+ALTER ROLE ivorysql SET ivorysql.compatible_mode TO oracle;
+错误:  cannot set parameter "ivorysql.compatible_mode" via ALTER USER/ROLE/DATABASE SET/RESET
+提示:  Use SET/RESET command in session instead.
+```
+
+同一条命令在 5.4 上返回 `ALTER ROLE`，看着像成功，但新会话 SHOW 出来仍是 `pg`（pg 会话里 PL/iSQL 本就建不了，门禁见第一道门）——返回成功、实际不生效（本文实测）。查 `pg_db_role_setting` 能看到这条设置确实写进去了（角色级、作用于全部数据库：`{ivorysql.compatible_mode=oracle}`），只是登录时不被采纳；`ALTER DATABASE ... SET` 同样返回 `ALTER DATABASE`、同样不生效，重启实例后再看仍是 `pg`。`ALTER SYSTEM SET` 更干脆，两个版本都拒绝：5.4 报 `parameter "ivorysql.compatible_mode" cannot be changed`，5.6 在中文 locale 下本地化成 `参数 "ivorysql.compatible_mode" 不可以改变`。运行期这几条 SQL 路都不通，但进入 oracle 模式并不只靠会话 `SET`：默认 initdb 生成的是双模式实例，Oracle 专用端口（`ivorysql.port`，默认 1521）连入自动是 oracle 模式，5432 连入默认 pg；`initdb -m pg` 才会关掉 Oracle 入口。正文全序列从 5432 进入，所以走的是会话级 `SET`；1521 入口见前文补测。
+
+**二是 PL/SQL 包限定变量名解析修复（PR #1381）**，本文没有用到包限定名，不受影响。
+
+还有一个显示层面的提示：本文 5.4 那轮的 psql 回显是英文，5.6 复测的 psql 回显在中文 locale 下大面积本地化——不只是 NOTICE 前缀变成 `注意:`、%TYPE 提示变成 `类型关联 t_emp.salary%TYPE 转换为 pg_catalog.numeric`，解析类报错也会变成 `错误:  语法错误 在 "%" 或附近的`，`\df+` 的表头也成了 `架构模式 / 结果数据类型 / 程序语言`。也有只本地化前缀的：上面 `ALTER ROLE` 那条报错带上了 `错误:/提示:`，正文仍是英文。其余英文回显以 5.4 为准。
+
+## 迁移评估清单
+
+实测结论汇总成表：
+
+| 特征 | IvorySQL PL/iSQL | plpgsql | 迁移动作 |
+| --- | --- | --- | --- |
+| 嵌套子函数 | 支持，子函数可读外层变量 | 语法错 | 必须拆到外层 |
+| `%TYPE` | 支持，解析到列的基础类型 | 原生支持 | 不用动 |
+| `%ROWTYPE` | 支持，当参数、当局部变量都行，按列名解析 | 局部变量支持；参数位置在 pg 会话直接语法错，oracle 会话里由 Oracle 解析器先解析成行类型 | 参数改成表行类型 `t_emp`，局部变量不用动 |
+| `OUT` | 支持，未赋值的 OUT 回 NULL | 函数原生支持；过程要 PostgreSQL 14+ | 不用动（目标 PG 13 需改写） |
+
+要动代码的是两处：嵌套子函数必须拆到外层，`%ROWTYPE` 当参数要改成表行类型；`%TYPE`、`OUT`、`%ROWTYPE` 局部变量照搬即可。
+
+还有一条在三件套之外：oracle 模式是 PL/iSQL 的全程门槛，建、调、匿名块都卡（空体匿名块除外）。评估时先确认目标环境的入口：默认 initdb 的实例直连 Oracle 专用端口（1521）即可，5432 会话则需 SET；以 `initdb -m pg` 初始化的实例不提供 Oracle 入口（该端口仅在数据库模式为 oracle 时监听）。运行期 SQL 改默认模式在两个实测版本上都走不通：5.4 上返回成功但不生效，5.6 起直接报错，细节见“5.6 上的复测与差异”一节。
+
+工程上的落点归结为两句话：**入口决定新会话的起步模式**——从 Oracle 专用端口（默认 1521）连入，新会话直接是 oracle 模式，不需要任何 `SET`；从 5432 连入，新会话从实例默认模式起步（本文实例为 pg）。走 5432 的话，落到连接池场景就是每条连接（含池的重连、扩容新建）都得带上这个 `SET`，通行做法是配连接池的 `initSql` 或等价机制。运行期用 SQL 改默认模式在两个实测版本上都不通，入口要在部署阶段定下来，细节见“5.6 上的复测与差异”一节。
+
+迁移一套存量 PL/SQL 过程代码的顺序建议：先确认会话模式怎么切；再扫有没有嵌套子函数，有就拆成独立函数；接着核对 %TYPE/%ROWTYPE 引用的表结构差异；最后用匿名块批量验证 OUT 行为。扫一遍这些特征，改动量基本能估准。
+
+最后交代测试边界：本文只覆盖嵌套子函数、`%TYPE`、`%ROWTYPE`、OUT 参数这四条特征，加上贯穿 PL/iSQL 测试的 oracle 会话模式门槛。包（package）、游标与循环、异常处理、集合类型、递归调用、嵌套子函数重载、IN OUT 参数模式都不在测试范围——存量代码里含这些结构的，照上面的清单估完改动量之后，还要单独过一遍。
+
+回到开头的问题——这些 Oracle 习惯，IvorySQL 5.4 兑现了多少：`%TYPE`、`%ROWTYPE`、OUT 原样支持，嵌套子函数同样支持；同一套代码要落到 plpgsql，`%TYPE`、OUT、`%ROWTYPE` 局部变量不用动，要动刀的是嵌套子函数和 `%ROWTYPE` 参数。摆在最前面要确认的是入口：PL/iSQL 只在 oracle 模式下可用——目标环境直连 1521 即天然满足，走 5432 则要保证每个会话都切到 oracle；两条路都走不通时，PL/iSQL 的创建、调用、匿名块就全都跑不起来（空体匿名块除外，见补测）。
+
+## 总结
+
+一句话：**PL/iSQL 把嵌套子函数、`%TYPE`、`%ROWTYPE`、OUT 这几样 Oracle 写法照单全收；落到 plpgsql，嵌套子函数必须拆、`%ROWTYPE` 参数要改成表行类型，其余照搬即可；而 oracle 模式只是 PL/iSQL 的入场券，plpgsql 在 pg 模式下照常运行（本文 pg 会话里的对照回显即是证明）。** 拆开看：
+
+- **嵌套子函数**：PL/iSQL 原样支持，还能读外层 `DECLARE` 变量（闭包）；plpgsql 直接语法错。这是迁移时必须动代码的两处之一——拆到外层变成独立函数。
+- **`%TYPE` / `%ROWTYPE`**：PL/iSQL 两种都支持；plpgsql 里 `%TYPE` 参数和变量都行，`%ROWTYPE` 只支持局部变量，参数位置要写成表行类型 `t_emp`。解析到列的基础类型、按列名解析字段，改列类型、加列之后存量函数不用重建。
+- **OUT 参数**：两者都支持，未赋值的 OUT 以 NULL 回传，psql 直接 CALL 也能用；函数上的 OUT 一直支持，过程带 OUT 要 PostgreSQL 14 及以上（原生 PG 13 会报“过程不能有输出参数”）。
+- **oracle 模式**：PL/iSQL 的前提，plpgsql 不需要。默认 initdb 是双模式实例：Oracle 专用端口（`ivorysql.port`，默认 1521）连入直接是 oracle 模式，5432 连入默认 pg、需会话级 `SET`；`initdb -m pg` 的实例没有 Oracle 入口。运行期用 `ALTER ROLE/DATABASE/SYSTEM` 改默认模式在 5.4、5.6 上都走不通（连接池场景配 `initSql`）。
+- **评估边界**：包、游标与循环、异常处理、集合类型、递归调用、嵌套子函数重载、IN OUT 参数模式未在实测范围，存量代码含这些结构的需另行评估。
+
+## 附：安装与会话的三个典型问题
+
+**1. RPM 不建日志目录，`-l` 写不进就起不来。** initdb 只建数据目录，`/usr/ivory-5/log/` 不在 RPM 里，得自己建。`-l` 指向不存在的路径时，pg_ctl 只报一句笼统的 `could not start server`，真实原因在它上面一行：
+
+```bash
+waiting for server to start..../bin/sh:行1: /usr/ivory-5/log/ivory.log: 没有那个文件或目录
+pg_ctl: could not start server
+```
+
+`mkdir -p /usr/ivory-5/log` 之后原命令直接成功——和 initdb 无关，纯粹是日志路径问题。启动前先确认 `-l` 的目标目录存在；快照还原之后尤其要查，还原点之前手工建的目录不会跟着回来。
+
+**2. 走 5432 入口时会话默认 pg，要建、调 PL/iSQL 对象的会话先切 oracle。** 默认 initdb 生成双模式实例：1521 入口自动是 oracle 模式，5432 入口默认 pg。走 5432 时，pg 状态下 PL/iSQL 的创建、调用、匿名块全被拒（空体匿名块除外；报错文案见正文第一道门与补测两节），每个要建、调 PL/iSQL 对象的会话先 `SET ivorysql.compatible_mode TO 'oracle';`；走 1521 则不需要这一步。运行期设默认模式行不通：`ALTER ROLE/DATABASE SET` 在 5.4 上返回成功但不生效、走 5432 的新会话仍从 pg 起步，在 5.6 上直接报错拒绝（两个版本的细节见“5.6 上的复测与差异”一节；连接池场景的落法见“迁移评估清单”一节）。
+
+**3. 查函数清单别去 pg_proc 找 lanname。** pg_proc 没有 lanname 列，报 `column "lanname" does not exist`，要 JOIN pg_language 才能按语言分账：
+
+```sql
+SELECT l.lanname, count(*) FROM pg_proc p JOIN pg_language l ON p.prolang = l.oid WHERE p.pronamespace = 'public'::regnamespace GROUP BY l.lanname ORDER BY l.lanname;
+
+ lanname | count 
+---------+-------
+ plisql  |     7
+ plpgsql |     4
+(2 rows)
+```
+
+这是跑到 plpgsql 对照为止的计数；把文中两个补测建的 `f_row_salary_pg3` 和 `f_probe_1521` 算进来，就是 plisql 8、plpgsql 5（与 5.6 全套复测的结果一致）。
+
+文中两处实现机制的说明引自 IvorySQL 官方设计文档《嵌套子函数》与《%ROWTYPE、%TYPE》。

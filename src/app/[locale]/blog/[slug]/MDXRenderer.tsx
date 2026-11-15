@@ -28,6 +28,7 @@ export function MDXRenderer({ content }: { content: string }) {
             target={href?.startsWith("http") ? "_blank" : undefined}
             rel={href?.startsWith("http") ? "noopener noreferrer" : undefined}
             {...props}
+            className="[overflow-wrap:anywhere]"
           >
             {children}
           </a>

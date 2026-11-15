@@ -1,0 +1,1177 @@
+---
+slug: "postgresql-ha-patroni-haproxy-keepalived-etcd"
+title: "使用 Patroni + HAProxy + Keepalived + etcd 搭建高可用 PostgreSQL 集群"
+date: "2026-10-26"
+author: "徐福贵"
+category: "PostgreSQL"
+image: "/images/blog/covers/postgresql-ha-cluster-v2.webp"
+tags: ["PostgreSQL", "High Availability", "Patroni"]
+description: "从三节点环境、服务配置到故障切换，使用 Patroni、HAProxy、Keepalived 与 etcd 构建 PostgreSQL 高可用集群。"
+---
+
+> 作者简介：徐福贵，PostgreSQL PCM，MySQL2PG 作者。
+
+## 背景
+
+单机 PG 面临服务器硬件故障、操作系统崩溃或网络中断，便会导致业务中断，无法持续提供服务。单机架构缺乏高可用机制，无法自动故障转移，恢复依赖人工干预，操作复杂，RTO较长。无法满足业务对连续性、可扩展性、高可靠性及容灾能力的要求。
+
+为了确保 PG 的高可用性并防止宕机，耽误业务的使用，建设强大的PG-HA高可用架构至关重要。Patroni、HAProxy、Keepalived、etcd 等工具可以协同实现HA高可用的这一目标。
+
+## 组件介绍
+
+### Patroni
+
+Patroni 是一个使用 Python 构建的高可用性（HA）PostgreSQL 的方案，Patroni 支持多种分布式配置存储，如 ZooKeeper、etcd、Consul 或 Kubernetes，支持PostgreSQL 9.3 + 以上的版本。
+
+[Patroni 官网地址](https://patroni.readthedocs.io/en/latest/)
+
+### HAProxy
+
+HAProxy 是一款高性能的开源负载均衡器和反向代理器，适用于TCP和HTTP应用程序的连接。HAProxy 能够分配工作负载，能够提升应用程序的性能，表现为缩短响应时间和提高吞吐量。
+
+[ HAProxy 官网介绍](https://www.haproxy.org/)
+
+### Keepalived
+
+Keepalived 提供了负载平衡和高可用性的框架。Keepalived实现了一组健康检查器，根据负载平衡服务器池的健康状况动态自适应地维护和管理负载平衡服务器池。
+
+[Keepalived 官网介绍](https://keepalived.readthedocs.io/en/latest/introduction.html)
+
+### ETCD
+
+ETCD 是一种高度一致的分布式键值存储，提供了一种可靠的方式来存储需要被分布式系统或机器集群访问的数据。它能优雅地处理网络分区中的领导者选举，即使 Leader 节点发生故障也能继续工作。在本方案中，它用于存储 PostgreSQL 高可用集群的状态和配置数据。它被Patroni用来管理集群状态。etcd确保配置数据在集群的所有节点上保持一致。
+
+[ETCD 官网](https://etcd.io/)
+
+### watchdog
+
+Linux 内核看门狗（softdog）。Patroni 定期向 /dev/watchdog 发送心跳，超时未收到时内核强制重启节点，用来防止 Patroni 假死导致双主。
+
+## 环境信息
+
+|  hostname |  IP 地址 |    CPU(Core)  | 内存 | 配置组件 |
+|:--:|:--:|:--:|:--:|:--:|
+| host01 | 10.0.12.9 |  4 | 8GB |  etcd, HAProxy, keepalived, Patroni and PostgreSQL |
+| host02 | 10.0.12.4 | 4   | 8GB | etcd, HAProxy, keepalived, Patroni and PostgreSQL |
+| host03 | 10.0.16.11 | 4  |  8GB |  etcd, HAProxy, keepalived, Patroni and PostgreSQL |
+| ha-vip | 10.0.12.10 | 4 | 8GB | HA-VIP 高可用虚拟IP  |
+
+## 防火墙设置
+
+### 防火墙直接关闭
+
+在环境中如果允许关闭防火墙，则是一种最简单的方式。可以使用以下的命令进行关闭。
+
+```bash
+-- 关闭防火墙
+sudo systemctl stop firewalld
+
+-- 查看防火墙的状态
+sudo systemctl status firewalld
+```
+
+### 开放指定的端口
+
+如果在实际的环境中，不允许关闭防火墙，只允许放开自定义的端口情况下，需要使用以下的命令进行开放。
+
+#### Patroni 端口配置
+- 8008：此端口用于Patroni的HTTP API
+
+```bash
+-- 开放8008端口
+sudo firewall-cmd --zone=public --add-port=8008/tcp --permanent
+
+-- 重启防火墙使配置生效
+sudo firewall-cmd --reload
+
+-- 验证端口是否开放
+sudo firewall-cmd --query-port=8008/tcp
+
+```
+
+#### HAProxy 端口配置
+- 5000：写端口，只路由到主库（TCP）。
+- 5001：读端口，路由到备库（TCP）。
+
+```bash
+-- 开放5000端口
+sudo firewall-cmd --zone=public --add-port=5000/tcp --permanent
+
+-- 开放5001端口
+sudo firewall-cmd --zone=public --add-port=5001/tcp --permanent
+
+-- 重启防火墙使配置生效
+sudo firewall-cmd --reload
+
+-- 验证端口是否开放
+sudo firewall-cmd --query-port=5000/tcp
+sudo firewall-cmd --query-port=5001/tcp
+```
+
+#### etcd 端口配置
+- 2379：此端口用于etcd客户端通信。
+- 2380：此端口用于etcd服务器与服务器之间的通信。
+
+```bash
+-- 开放2379端口
+sudo firewall-cmd --zone=public --add-port=2379/tcp --permanent
+
+-- 开放2380端口
+sudo firewall-cmd --zone=public --add-port=2380/tcp --permanent
+
+-- 重启防火墙使配置生效
+sudo firewall-cmd --reload
+
+-- 验证端口是否开放
+sudo firewall-cmd --query-port=2379/tcp
+sudo firewall-cmd --query-port=2380/tcp
+```
+
+#### Keepalived 端口配置
+
+- 112：此端口用于Keepalived实例之间的虚拟路由器冗余协议（VRRP）通信。
+- 5405：此端口用于Keepalived实例之间的多播流量。
+
+```bash
+# 放行 VRRP 协议
+sudo firewall-cmd --permanent --add-rich-rule='rule protocol value="vrrp" accept'
+ 
+# 重载防火墙使配置生效
+sudo firewall-cmd --reload
+ 
+# 验证规则是否生效
+sudo firewall-cmd --list-rich-rules
+```
+
+#### PostgreSQL 端口配置
+
+5432：此端口用于PostgreSQL客户端连接。
+
+```bash
+-- 开放5432端口
+sudo firewall-cmd --zone=public --add-port=5432/tcp --permanent
+
+-- 重启防火墙使配置生效
+sudo firewall-cmd --reload
+
+-- 验证端口是否开放
+sudo firewall-cmd --query-port=5432/tcp
+
+
+
+```
+
+## 安装 PostgreSQL 17.4
+
+需要在所有的机器上部署PostgreSQL17，仅是安装即可，不需要初始化，Patroni 在启动时会进行初始化实例。
+
+```bash
+
+--  安装编译工具和依赖
+sudo yum groupinstall "Development Tools" -y
+sudo yum install readline-devel zlib-devel libicu-devel openssl-devel pam-devel libxml2-devel libxslt-devel systemd-devel -y
+
+-- 创建用户和数据目录
+sudo groupadd postgres
+sudo useradd -g postgres postgres
+sudo passwd postgres
+
+sudo useradd -r -s /sbin/nologin etcd
+sudo mkdir -p /etc/etcd /var/lib/etcd
+sudo chown -R etcd:etcd /var/lib/etcd
+
+-- 创建安装目录
+sudo mkdir -p /opt/pgsql
+sudo chown postgres:postgres /opt/pgsql
+sudo mkdir -p /opt/pgdata17.4
+sudo chown postgres:postgres /opt/pgdata17.4
+
+-- PG的源码下载
+cd /root
+wget https://ftp.postgresql.org/pub/source/v17.4/postgresql-17.4.tar.gz
+tar -zxvf postgresql-17.4.tar.gz
+
+-- 进行编译和安装
+cd postgresql-17.4
+./configure --prefix=/opt/pgsql --with-openssl --with-libxml --with-icu --with-systemd
+make -j$(nproc)
+sudo make install
+
+
+# 配置环境变量
+echo 'export PATH=/opt/pgsql/bin:$PATH' >> ~/.bash_profile
+source ~/.bash_profile
+```
+
+## 部署 ETCD 集群
+
+需要在所有的节点上部署 ETCD ，三个节点形成 ETCD 的集群，使 ETCD 具有高可用性 。
+
+### 源码安装 ETCD 节点
+
+#### 安装 GO 程序
+
+```bash
+-- 使用yum 源进行安装
+yum install -y go
+```
+
+#### 编译 ETCD 
+```bash
+-- 拉取etcd的源代码
+git clone https://github.com/etcd-io/etcd.git
+cd etcd
+
+--  切换到 v3.5.12 标签
+git checkout v3.5.12
+
+-- 进行build
+./build.sh
+
+-- 文件复制到执行文件中
+sudo cp bin/etcd* /usr/local/bin/
+
+-- 版本信息
+$ etcdutl version
+etcdutl version: 3.5.12
+API version: 3.5
+
+$ etcdctl version
+etcdctl version: 3.5.12
+API version: 3.5
+
+$ etcd --version
+etcd Version: 3.5.12
+Git SHA: e7b3bb6cc
+Go Version: go1.20.13
+Go OS/Arch: linux/amd64
+
+```
+
+#### 配置 ETCD 服务
+
+按照以下步骤部署 ETCD 的集群。
+
+```bash
+-- 在每台机器的 /etc/hosts 中添加以下映射
+10.0.12.4 host02
+10.0.12.9 host01
+10.0.16.11 host03
+```
+
+在`host01` 节点上配置以下内容 
+
+```bash
+$ cat /etc/etcd/etcd.conf.yml
+name: host01
+data-dir: /var/lib/etcd
+listen-peer-urls: http://10.0.12.9:2380
+listen-client-urls: http://10.0.12.9:2379,http://127.0.0.1:2379
+advertise-client-urls: http://10.0.12.9:2379
+initial-advertise-peer-urls: http://10.0.12.9:2380
+initial-cluster: host02=http://10.0.12.4:2380,host01=http://10.0.12.9:2380,host03=http://10.0.16.11:2380
+initial-cluster-token: etcd-cluster-01
+initial-cluster-state: new
+```
+
+在`host02`节点上配置以下的内容。
+
+```bash
+$ cat /etc/etcd/etcd.conf.yml
+name: host02
+data-dir: /var/lib/etcd
+listen-peer-urls: http://10.0.12.4:2380
+listen-client-urls: http://10.0.12.4:2379,http://127.0.0.1:2379
+advertise-client-urls: http://10.0.12.4:2379
+initial-advertise-peer-urls: http://10.0.12.4:2380
+initial-cluster: host02=http://10.0.12.4:2380,host01=http://10.0.12.9:2380,host03=http://10.0.16.11:2380
+initial-cluster-token: etcd-cluster-01
+initial-cluster-state: new
+```
+
+在`host03` 节点上配置以下的内容。
+
+```bash
+$ cat /etc/etcd/etcd.conf.yml
+name: host03
+data-dir: /var/lib/etcd
+listen-peer-urls: http://10.0.16.11:2380
+listen-client-urls: http://10.0.16.11:2379,http://127.0.0.1:2379
+advertise-client-urls: http://10.0.16.11:2379
+initial-advertise-peer-urls: http://10.0.16.11:2380
+initial-cluster: host02=http://10.0.12.4:2380,host01=http://10.0.12.9:2380,host03=http://10.0.16.11:2380
+initial-cluster-token: etcd-cluster-01
+initial-cluster-state: new
+```
+
+在每个节点上配置 `etcd.service` 
+
+```bash
+$ cat /etc/systemd/system/etcd.service
+[Unit]
+Description=etcd
+Documentation=https://github.com/etcd-io/etcd
+After=network.target
+
+[Service]
+Type=notify
+User=etcd
+ExecStart=/usr/local/bin/etcd --config-file=/etc/etcd/etcd.conf.yml
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
+```
+
+使用以下命令 启动 `ETCD` 服务。
+
+```bash
+-- 加载配置文件
+sudo systemctl daemon-reload
+
+-- 启动 ETCD 服务
+sudo systemctl start etcd
+
+-- 设置开机自启
+sudo systemctl enable etcd
+
+-- 查看 ETCD 运行的状态
+sudo systemctl status etcd
+
+```
+
+查看 ETCD 集群内的各角色信息
+
+```bash
+$ etcdctl --endpoints=http://10.0.12.9:2379,http://10.0.12.4:2379,http://10.0.16.11:2379   endpoint status -w table
++------------------------+------------------+---------+---------+-----------+------------+-----------+------------+--------------------+--------+
+|        ENDPOINT        |        ID        | VERSION | DB SIZE | IS LEADER | IS LEARNER | RAFT TERM | RAFT INDEX | RAFT APPLIED INDEX | ERRORS |
++------------------------+------------------+---------+---------+-----------+------------+-----------+------------+--------------------+--------+
+|  http://10.0.12.9:2379 | 6ede6b6607884170 |  3.5.12 |  414 kB |     false |      false |        13 |      55307 |              55307 |        |
+|  http://10.0.12.4:2379 | 7147f212ee0d15e1 |  3.5.12 |  418 kB |     false |      false |        13 |      55307 |              55307 |        |
+| http://10.0.16.11:2379 | 6aabc4a9a7fdc9a0 |  3.5.12 |  414 kB |      true |      false |        13 |      55307 |              55307 |        |
++------------------------+------------------+---------+---------+-----------+------------+-----------+------------+--------------------+--------+
+```
+
+查看 ETCD 集群内的成员
+
+```bash
+$ etcdctl --endpoints=http://10.0.12.9:2379  member list -w table
++------------------+---------+----------+------------------------+------------------------+------------+
+|        ID        | STATUS  |   NAME   |       PEER ADDRS       |      CLIENT ADDRS      | IS LEARNER |
++------------------+---------+----------+------------------------+------------------------+------------+
+| 6aabc4a9a7fdc9a0 | started | host03 | http://10.0.16.11:2380 | http://10.0.16.11:2379 |      false |
+| 6ede6b6607884170 | started | host01 |  http://10.0.12.9:2380 |  http://10.0.12.9:2379 |      false |
+| 7147f212ee0d15e1 | started | host02 |  http://10.0.12.4:2380 |  http://10.0.12.4:2379 |      false |
++------------------+---------+----------+------------------------+------------------------+------------+
+```
+
+查看 ETCD 集群内的健康状态
+
+```bash
+$ etcdctl --endpoints=http://10.0.12.9:2379 endpoint health --cluster
+http://10.0.12.9:2379 is healthy: successfully committed proposal: took = 3.718339ms
+http://10.0.12.4:2379 is healthy: successfully committed proposal: took = 3.926712ms
+http://10.0.16.11:2379 is healthy: successfully committed proposal: took = 9.996198ms
+```
+
+## 部署 keepalived 
+
+在每台服务器上部署 `keepalived`  主要是创建 VIP（虚拟 IP），用于实现客户端无感知故障切换（Failover）。按照以下的步骤在每台机器进行操作。
+
+
+```bash
+-- 使用yum 源进行部署
+yum install -y keepalived
+
+-- 添加配置参数
+echo "net.ipv4.ip_nonlocal_bind = 1" >> /etc/sysctl.conf
+
+-- 使配置生效
+sudo sysctl -p
+
+```
+
+### 配置 keepalived.conf  文件
+
+使用ifconfig获取你的网络的接口名称，然后根据接口的名字进行配置虚拟IP，需要在每台机器上进行配置。
+
+#### 配置 host01 的机器
+```bash
+[root@host01 ~]# ifconfig
+eth0: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 1500
+        inet 10.0.12.9  netmask 255.255.252.0  broadcast 10.0.15.255
+*******
+
+-- 备份一份配置文件
+cp /etc/keepalived/keepalived.conf /etc/keepalived/keepalived.conf--back
+
+```
+
+对 `keepalived.conf ` 配置文件进行以下修改。
+
+```bash
+[root@host01 ~]# cat  /etc/keepalived/keepalived.conf
+vrrp_script check_haproxy {
+  script "pkill -0 haproxy"
+  interval 2
+  weight 2
+}
+vrrp_instance VI_1 {
+  state MASTER
+  interface eth0
+  virtual_router_id 51
+  priority 101
+  advert_int 1
+  virtual_ipaddress {
+    192.168.231.140
+  }
+  track_script {
+    check_haproxy
+  }
+}
+```
+
+####  配置 host02  的机器
+
+```bash
+eth0: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 1500
+        inet 10.0.12.4  netmask 255.255.252.0  broadcast 10.0.15.255
+*******
+
+-- 备份一份配置文件
+cp /etc/keepalived/keepalived.conf /etc/keepalived/keepalived.conf--back
+
+```
+
+对 `keepalived.conf ` 配置文件进行以下修改。
+
+```bash
+[root@host02 ~]# cat  /etc/keepalived/keepalived.conf
+vrrp_script check_haproxy {
+   script "pkill -0 haproxy"
+   interval 2
+   weight 2
+}
+vrrp_instance VI_1 {
+  state BACKUP
+  interface eth0
+  virtual_router_id 51
+  priority 100
+  advert_int 1
+  virtual_ipaddress {
+    192.168.231.140
+  }
+  track_script {
+  check_haproxy
+  }
+}
+```
+
+####  配置 host03  的机器
+
+```bash
+eth0: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 1500
+        inet 10.0.16.11  netmask 255.255.252.0  broadcast 10.0.19.255
+*******
+
+-- 备份一份配置文件
+cp /etc/keepalived/keepalived.conf /etc/keepalived/keepalived.conf--back
+
+```
+
+对 `keepalived.conf ` 配置文件进行以下修改。
+
+```bash
+[root@host03 ~]# cat  /etc/keepalived/keepalived.conf
+vrrp_script check_haproxy {
+   script "pkill -0 haproxy"
+   interval 2
+   weight 2
+}
+vrrp_instance VI_1 {
+  state BACKUP
+  interface eth0
+  virtual_router_id 51
+  priority 100
+  advert_int 1
+  virtual_ipaddress {
+    192.168.231.140
+  }
+  track_script {
+  check_haproxy
+  }
+}
+```
+
+### 开启 keepalived 的服务
+
+在每台机器上开启 keepalived 的服务，并检查服务是否运行正常。
+
+```bash
+systemctl start keepalived
+systemctl enable keepalived
+systemctl status keepalived
+```
+
+### 检查  `192.168.231.140` 是否都生效
+
+在每台机器上使用 `ip addr`检查是否有140的IP地址
+
+#### host01 机器
+
+```bash
+2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc mq state UP group default qlen 1000
+    link/ether 52:54:00:7a:59:78 brd ff:ff:ff:ff:ff:ff
+    inet 10.0.12.9/22 brd 10.0.15.255 scope global eth0
+       valid_lft forever preferred_lft forever
+    inet 192.168.231.140/32 scope global eth0
+    **********
+```
+#### host02 机器
+
+```bash
+2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc mq state UP group default qlen 1000
+    link/ether 52:54:00:26:6b:b6 brd ff:ff:ff:ff:ff:ff
+    inet 10.0.12.4/22 brd 10.0.15.255 scope global eth0
+       valid_lft forever preferred_lft forever
+    inet 192.168.231.140/32 scope global eth0
+  ******
+```
+
+#### host03 机器
+
+```bash
+2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc mq state UP group default qlen 1000
+    link/ether 52:54:00:33:60:54 brd ff:ff:ff:ff:ff:ff
+    inet 10.0.16.11/22 brd 10.0.19.255 scope global eth0
+       valid_lft forever preferred_lft forever
+    inet 192.168.231.140/32 scope global eth0
+ ******
+```
+
+## 配置 HAProxy
+
+### 安装 HAProxy
+使用以下命令在每台机器上进行安装 `haproxy`
+
+```bash
+yum install -y haproxy
+```
+
+### 配置HAProxy
+
+在 host01 节点上配置 `haproxy` 的配置文件，然后再传送到 host02 和 host03 节点上。
+
+```bash
+-- 备份一份 haproxy 的文件
+[root@host01 ~]# cp /etc/haproxy/haproxy.cfg /etc/haproxy/haproxy.cfg--back
+
+-- 把以下内容加入到配置文件中(复制时注意格式问题)
+[root@host01 ~]# cat   /etc/haproxy/haproxy.cfg
+# /etc/haproxy/haproxy.cfg
+
+global
+    log /dev/log local0
+    log /dev/log local1 notice
+    chroot /var/lib/haproxy
+    stats socket /run/haproxy/admin.sock mode 660 level admin
+    stats timeout 30s
+    user haproxy
+    group haproxy
+    daemon
+    maxconn 1000
+
+defaults
+    mode tcp
+    log global
+    option tcplog
+    retries 3
+    timeout queue 1m
+    timeout connect 4s
+    timeout client 60m
+    timeout server 60m
+    timeout check 5s
+    maxconn 900
+
+# ----------------------------
+# 监控页面（HTTP）
+# ----------------------------
+listen stats
+    mode http
+    bind *:7000
+    stats enable
+    stats uri /
+    stats refresh 10s
+    stats admin if TRUE
+
+# ----------------------------
+# 写流量：只路由到主库（Patroni /primary 返回 200）
+# ----------------------------
+listen primary
+    bind 192.168.231.140:5000
+    mode tcp
+    balance first
+    option httpchk OPTIONS /primary
+    http-check expect status 200
+    default-server inter 3s fall 3 rise 2 on-marked-down shutdown-sessions
+    server host01      10.0.12.9:5432  maxconn 100 check port 8008
+    server host02  10.0.12.4:5432  maxconn 100 check port 8008
+    server host03 10.0.16.11:5432 maxconn 100 check port 8008
+
+# ----------------------------
+# 读流量：可路由到任意副本
+# ----------------------------
+listen replicas
+    bind 192.168.231.140:5001
+    mode tcp
+    balance roundrobin
+    option httpchk OPTIONS /replica
+    http-check expect status 200
+    default-server inter 3s fall 3 rise 2 on-marked-down shutdown-sessions
+    server host01      10.0.12.9:5432  maxconn 100 check port 8008
+    server host02  10.0.12.4:5432  maxconn 100 check port 8008
+    server host03 10.0.16.11:5432 maxconn 100 check port 8008
+
+```
+
+### 校验文件的正确性
+
+```bash
+[root@host01 ~]# sudo haproxy -c -f /etc/haproxy/haproxy.cfg
+Configuration file is valid
+```
+
+### 把文件传到其他的节点上
+
+```bash
+-- 传到其他的节点上
+[root@host01 ~]# scp -r   /etc/haproxy/haproxy.cfg host02:/etc/haproxy/haproxy.cfg
+haproxy.cfg                                                                                                             100% 1754     5.6MB/s   00:00
+[root@host01 ~]# scp -r   /etc/haproxy/haproxy.cfg host03:/etc/haproxy/haproxy.cfg
+haproxy.cfg
+```
+
+### 创建目录并赋权
+
+以下命令需要在每个服务器上执行
+
+```bash
+sudo mkdir -p /var/lib/haproxy
+sudo chown root:root /var/lib/haproxy
+sudo chmod 755 /var/lib/haproxy
+sudo mkdir -p /run/haproxy
+sudo chown haproxy:haproxy /run/haproxy
+sudo chmod 755 /run/haproxy
+```
+
+###  对每个节点进行启动，确保无异常
+```bash
+sudo systemctl daemon-reload
+systemctl start haproxy
+systemctl enable haproxy
+systemctl status haproxy
+```
+
+## 启用 watchdog 
+
+Watchdog 主要用于防止 Patroni 进程假死但未退出的情况，避免节点处于不确定状态。在 Patroni 高可用场景中，当 Patroni 无法正常向 watchdog 发送心跳时，系统会在超时后自动重启节点，从而避免因进程假死导致的脑裂风险。
+
+以下操作需要在每台节点上操作。
+
+### watchdog 安装部署
+
+```bash
+-- 使用 yum 源安装 watchdog
+sudo yum install -y watchdog
+
+-- 	加载 softdog 内核模块
+sudo modprobe softdog
+echo "softdog" | sudo tee /etc/modules-load.d/softdog.conf
+
+-- 验证是否有效
+$ lsmod | grep softdog
+softdog                13319  0
+
+
+-- watchdog 的权限
+echo 'KERNEL=="watchdog", MODE="0600", OWNER="postgres"' | sudo tee /etc/udev/rules.d/99-watchdog.rules
+sudo udevadm control --reload-rules
+sudo udevadm trigger --subsystem-match=watchdog
+sudo chown -R postgres:postgres /dev/watchdog
+
+```
+
+
+## 使用 Patroni 管理 PostgreSQL 17 
+
+需要在每个节点上按照以下的步骤部署patroni
+
+### 安装 Patroni
+
+```bash
+-- 先安装  python3 相关依赖包
+sudo yum install -y python3 python3-pip
+
+-- 安装patroni
+sudo pip3 install -i https://pypi.tuna.tsinghua.edu.cn/simple "patroni[etcd3,psycopg2-binary]"
+
+-- 查看patroni的版本
+patroni --version
+
+-- 设置开机自启
+sudo systemctl enable patroni
+
+```
+
+### 配置 Patroni
+
+每个节点的配置只有 IP 和节点名称不同，需要在每个节点上进行配置patroni的配置文件和patroni.service配置文件。
+
+#### host01 节点
+
+patroni.yml 配置文件配置
+```bash
+[root@host01 ]# cat /etc/patroni.yml
+scope: watchdogmycluster          # 所有节点必须一致
+namespace: /db           # etcd 命名空间（可选）
+name: host01                # 本节点名称（每台机器不同）
+restapi:
+  listen: 10.0.12.9:8008
+  connect_address: 10.0.12.9:8008
+etcd3:
+    hosts:                        # etcd 集群地址
+    - 10.0.12.9:2379
+    - 10.0.12.4:2379
+    - 10.0.16.11:2379
+bootstrap:
+  dcs:
+    ttl: 30               # leader 租约时间（秒）
+    loop_wait: 10         # 主节点状态上报间隔
+    retry_timeout: 10     # 故障重试超时
+    maximum_lag_on_failover: 1048576  # 最大允许 lag（1MB）
+    postgresql:
+      use_pg_rewind: true
+      parameters:
+        wal_level: replica
+        hot_standby: on
+        max_wal_senders: 10
+        wal_keep_size: 128MB
+        max_replication_slots: 5
+        password_encryption: md5
+  pg_hba:
+    - host replication replicator 10.0.12.4/32 md5
+    - host replication replicator 10.0.12.9/32 md5
+    - host replication replicator 10.0.16.11/32 md5
+    - host    postgres        postgres        10.0.12.4/32       trust
+    - host    postgres        postgres        10.0.12.9/32       trust
+    - host    postgres        postgres        10.0.16.11/32       trust
+  initdb:
+    - encoding: UTF8
+    - data-checksums
+    - "auth-host=md5"
+    - "auth-local=trust"
+postgresql:
+  listen: 10.0.12.9:5432
+  connect_address: 10.0.12.9:5432
+  data_dir: /opt/pgdata17.4
+  bin_dir: /opt/pgsql/bin
+  pgpass: /tmp/pgpass
+  authentication:
+    replication:
+      username: replicator
+      password: rep_pass
+    superuser:
+      username: postgres
+      password: postgres_pass
+  parameters:
+    password_encryption: md5
+    unix_socket_directories: '/tmp'
+watchdog:
+  mode: required
+  device: /dev/watchdog
+  safety_margin: 5   # 保证 Leader 锁过期前节点已被重启
+tags:
+    nofailover: false
+    noloadbalance: false
+    clonefrom: false
+    nosync: false
+```
+
+#### host02 节点
+
+```bash
+[root@host02 ]# cat /etc/patroni.yml
+scope: watchdogmycluster          # 所有节点必须一致
+namespace: /db           # etcd 命名空间（可选）
+name: host02                # 本节点名称（每台机器不同）
+restapi:
+  listen: 10.0.12.4:8008
+  connect_address: 10.0.12.4:8008
+etcd3:
+    hosts:                        # etcd 集群地址
+    - 10.0.12.9:2379
+    - 10.0.12.4:2379
+    - 10.0.16.11:2379
+bootstrap:
+  dcs:
+    ttl: 30               # leader 租约时间（秒）
+    loop_wait: 10         # 主节点状态上报间隔
+    retry_timeout: 10     # 故障重试超时
+    maximum_lag_on_failover: 1048576  # 最大允许 lag（1MB）
+    postgresql:
+      use_pg_rewind: true
+      parameters:
+        wal_level: replica
+        hot_standby: on
+        max_wal_senders: 10
+        wal_keep_size: 128MB
+        max_replication_slots: 5
+        password_encryption: md5
+  pg_hba:
+    - host replication replicator 10.0.12.4/32 md5
+    - host replication replicator 10.0.12.9/32 md5
+    - host replication replicator 10.0.16.11/32 md5
+    - host    postgres        postgres        10.0.12.4/32       trust
+    - host    postgres        postgres        10.0.12.9/32       trust
+    - host    postgres        postgres        10.0.16.11/32       trust
+  initdb:
+    - encoding: UTF8
+    - data-checksums
+    - "auth-host=md5"
+    - "auth-local=trust"
+postgresql:
+  listen: 10.0.12.4:5432
+  connect_address: 10.0.12.4:5432
+  data_dir: /opt/pgdata17.4
+  bin_dir: /opt/pgsql/bin
+  pgpass: /tmp/pgpass
+  authentication:
+    replication:
+      username: replicator
+      password: rep_pass
+    superuser:
+      username: postgres
+      password: postgres_pass
+  parameters:
+    password_encryption: md5
+    unix_socket_directories: '/tmp'
+watchdog:
+  mode: required
+  device: /dev/watchdog
+  safety_margin: 5   # 保证 Leader 锁过期前节点已被重启
+tags:
+    nofailover: false
+    noloadbalance: false
+    clonefrom: false
+    nosync: false
+```
+
+#### host03 节点
+
+```bash
+[root@host03 ]# cat /etc/patroni.yml
+scope: watchdogmycluster          # 所有节点必须一致
+namespace: /db           # etcd 命名空间（可选）
+name: host03                # 本节点名称（每台机器不同）
+restapi:
+  listen: 10.0.16.11:8008
+  connect_address: 10.0.16.11:8008
+etcd3:
+    hosts:                        # etcd 集群地址
+    - 10.0.12.9:2379
+    - 10.0.12.4:2379
+    - 10.0.16.11:2379
+bootstrap:
+  dcs:
+    ttl: 30               # leader 租约时间（秒）
+    loop_wait: 10         # 主节点状态上报间隔
+    retry_timeout: 10     # 故障重试超时
+    maximum_lag_on_failover: 1048576  # 最大允许 lag（1MB）
+    postgresql:
+      use_pg_rewind: true
+      parameters:
+        wal_level: replica
+        hot_standby: on
+        max_wal_senders: 10
+        wal_keep_size: 128MB
+        max_replication_slots: 5
+        password_encryption: md5
+  pg_hba:
+    - host replication replicator 10.0.12.4/32 md5
+    - host replication replicator 10.0.12.9/32 md5
+    - host replication replicator 10.0.16.11/32 md5
+    - host    postgres        postgres        10.0.12.4/32       trust
+    - host    postgres        postgres        10.0.12.9/32       trust
+    - host    postgres        postgres        10.0.16.11/32       trust
+  initdb:
+    - encoding: UTF8
+    - data-checksums
+    - "auth-host=md5"
+    - "auth-local=trust"
+postgresql:
+  listen: 10.0.16.11:5432
+  connect_address: 10.0.16.11:5432
+  data_dir: /opt/pgdata17.4
+  bin_dir: /opt/pgsql/bin
+  pgpass: /tmp/pgpass
+  authentication:
+    replication:
+      username: replicator
+      password: rep_pass
+    superuser:
+      username: postgres
+      password: postgres_pass
+  parameters:
+    password_encryption: md5
+    unix_socket_directories: '/tmp'
+watchdog:
+  mode: required
+  device: /dev/watchdog
+  safety_margin: 5   # 保证 Leader 锁过期前节点已被重启
+tags:
+    nofailover: false
+    noloadbalance: false
+    clonefrom: false
+    nosync: false
+```
+
+#### 配置 patroni.service 服务
+
+每台机器需要按照以下方法修改  `patroni.service` 文件
+
+```bash
+[root@host01 ~]# cat /etc/systemd/system/patroni.service
+[Unit]
+Description=Runners to orchestrate a high-availability PostgreSQL
+After=syslog.target network.target
+
+[Service]
+Type=simple
+User=postgres
+Group=postgres
+ExecStart=/usr/local/bin/patroni /etc/patroni.yml
+KillMode=process
+TimeoutSec=30
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target
+```
+
+#### 创建对应PG初始化保存的目录
+
+需要在每台机器上创建以下的目录，并赋予相对应的权限。
+
+```bash
+mkdir -p /opt/pgdata17.4
+chown -R postgres:postgres /opt/pgdata17.4
+```
+
+#### 启动 patroni 服务
+
+需要在每台机器上运行以下命令，并确认运行状态正常。
+
+```bash
+-- 加载配置文件
+sudo systemctl daemon-reload
+-- 启动patroni
+sudo systemctl start patroni
+--  查看patroni的运行状态
+sudo systemctl status patroni
+```
+
+> 如果在部署过程中有异常，可以使用 `etcdctl --endpoints=http://10.0.12.9:2379 del "/db/watchdogmycluster/" --prefix  ` 删除掉key重新进行初始化patroni
+
+#### 查看 patroni 集群的运行状态
+
+可以在部署的 patroni 节点上运行以下的命令查看运行状态。
+
+```bash
+# patronictl -c /etc/patroni.yml list watchdogmycluster
++ Cluster: watchdogmycluster (7585445892328633499) +-------------+-----+------------+-----+
+| Member   | Host       | Role    | State     | TL | Receive LSN | Lag | Replay LSN | Lag |
++----------+------------+---------+-----------+----+-------------+-----+------------+-----+
+| host01  | 10.0.12.9  | Leader  | running   |  1 |             |     |            |     |
+| host02  | 10.0.12.4  | Replica | streaming |  1 |   0/5054D40 |   0 |  0/5054D40 |   0 |
+| host03  | 10.0.16.11 | Replica | streaming |  1 |   0/5054D40 |   0 |  0/5054D40 |   0 |
++----------+------------+---------+-----------+----+-------------+-----+------------+-----+
+```
+
+| 列名 | 含义 | 说明 |
+|:------:|:------:|:------:|
+| Member | 成员名称 | 在 patroni.yml 中配置的 name 字段，用于唯一标识该节点 |
+|  Host  | 主机地址 | PostgreSQL 监听的 IP |
+| Role | 角色 | Leader：当前主库（可读写）<br>Replica：备库（只读，流复制）<br>Sync Standby：同步备库<br>Standby Leader：备用集群中的主节点 |
+| State | PostgreSQL 状态 | running:PostgreSQL 正常运行 <br> stopped:PostgreSQL 已停止 <br> starting / restarting：正在启停 <br> streaming:备库正在接收 WAL |
+| TL | Timeline（时间线） | PostgreSQL 的 WAL 时间线编号。主库每次 promote 都会增加 TL | 
+| Receive LSN | 接收到的 WAL 位置(Log Sequence Number)  | 备库从主库 接收到的最新 WAL 位置 |
+| Lag | 接收延迟（Bytes） | 主库当前 LSN - Receive LSN，表示 网络/传输延迟,值越大，说明 WAL 还未完全传到备库。|
+| Replay LSN | 已重放的 WAL 位置 | 备库 已应用到数据库的 WAL 位置，可能小于 Receive LSN。|
+| Lag | 重放延迟（Bytes） | 主库当前 LSN - Replay LSN ，表示 备库数据落后主库的程度。这是判断能否安全 failover 的关键指标|
+
+> LSN（Log Sequence Number） 是 PostgreSQL WAL 日志的唯一递增标识，格式如 0/5054D40，通过`SELECT pg_wal_lsn_diff('0/6000000', '0/5FFF000')` 计算差值。
+
+
+#### 使用 haproxy 连接PostgreSQL数据库
+
+在持有 VIP 的机器上查看 192.168.231.140 地址以及 5000、5001 端口是否存在
+
+```bash
+[postgres@host01 pgdata17.4]$ ip addr|grep 140
+    inet 192.168.231.140/32 scope global eth0
+[postgres@host01 pgdata17.4]$ netstat -nltp|grep 500
+(Not all processes could be identified, non-owned process info
+ will not be shown, you would have to be root to see it all.)
+tcp        0      0 192.168.231.140:5000    0.0.0.0:*               LISTEN      -
+tcp        0      0 192.168.231.140:5001    0.0.0.0:*               LISTEN      -
+```
+
+使用psql 在每台节点上测试连接数据库。
+
+```bash
+-- host01 的机器
+$ psql -h 192.168.231.140 -p 5000
+psql (17.4)
+Type "help" for help.
+
+postgres=#
+
+--  host02 的机器
+[postgres@host02 pgdata17.4]$ psql -h 192.168.231.140 -p 5000
+psql (17.4)
+Type "help" for help.
+
+postgres=#
+
+-- host03 的机器
+[postgres@host03 pgdata17.4]$ psql -h 192.168.231.140 -p 5000
+psql (17.4)
+Type "help" for help.
+
+postgres=#
+
+```
+
+## 模拟故障
+
+### 业务持续写入时主库故障
+
+本场景模拟业务持续写入时主库所在主机突然宕机，观察 Patroni 自动故障转移、HAProxy 将写流量切换到新主库，以及业务恢复的过程。当前集群中 host02 为 Leader，host01 和 host03 为 Replica。
+
+#### 创建测试表
+
+通过 VIP 的 5000 端口连接数据库并创建测试表。
+
+```bash
+[postgres@host01 ~]$ psql -h 192.168.231.140 -p 5000 -U postgres -d postgres
+psql (17.4)
+Type "help" for help.
+
+postgres=# create table t(id int);
+CREATE TABLE
+```
+
+#### 启动持续写入脚本
+
+执行以下脚本，每秒写入一条数据，并输出客户端时间和实际处理写入的数据库节点 IP，同时把输出保存到日志文件中。
+
+```bash
+while true;
+do
+  echo -n "$(date '+%F %T') "
+  PGCONNECT_TIMEOUT=3 psql -d postgres -U postgres -h 192.168.231.140 -p 5000 -Atq \
+    -c "insert into t values((random()*10)) returning inet_server_addr();" 2>&1
+  sleep 1
+done | tee /tmp/write_test.log
+```
+
+正常写入时输出如下，可以看到写入全部落在当前主库 host02（10.0.12.4）上。
+
+```bash
+2026-10-10 20:45:01 10.0.12.4
+2026-10-10 20:45:02 10.0.12.4
+2026-10-10 20:45:03 10.0.12.4
+```
+
+#### 模拟主库故障
+
+保持写入脚本运行，在当前主库 host02 上执行以下命令，模拟主机突然宕机。
+
+```bash
+[root@host02 ~]# echo b > /proc/sysrq-trigger
+```
+
+> 注意：这个是高危命令，谨慎执行！
+
+#### 观察业务中断与恢复
+
+主库宕机后，写入脚本出现短暂报错，新主库选出后，HAProxy 健康检查将写流量路由到新主库，业务自动恢复写入。
+
+```bash
+2026-10-10 20:45:10 10.0.12.4
+2026-10-10 20:45:11 10.0.12.4
+2026-10-10 20:45:15 psql: error: connection to server at "192.168.231.140", port 5000 failed: timeout expired
+2026-10-10 20:45:19 psql: error: connection to server at "192.168.231.140", port 5000 failed: server closed the connection unexpectedly
+    This probably means the server terminated abnormally
+    before or while processing the request.
+......
+2026-10-10 20:45:41 10.0.12.9
+2026-10-10 20:45:42 10.0.12.9
+2026-10-10 20:45:43 10.0.12.9
+```
+
+#### 查看故障转移后的集群状态
+
+```bash
+[root@host01 ~]# patronictl -c /etc/patroni.yml list watchdogmycluster
++ Cluster: watchdogmycluster (7585445892328633499) +-------------+-----+------------+-----+
+| Member   | Host       | Role    | State     | TL | Receive LSN | Lag | Replay LSN | Lag |
++----------+------------+---------+-----------+----+-------------+-----+------------+-----+
+| host01   | 10.0.12.9  | Leader  | running   |  3 |             |     |            |     |
+| host03   | 10.0.16.11 | Replica | streaming |  3 |   0/5A1C3D8 |   0 |  0/5A1C3D8 |   0 |
++----------+------------+---------+-----------+----+-------------+-----+------------+-----+
+```
+
+host01 被提升为新的 Leader，时间线（TL）从 2 增加到 3，host03 自动改为从新主库同步数据。原主库 host02 宕机后，它在 etcd 中的成员信息过期，因此暂时不在列表中显示。
+
+#### 原主库恢复并重新加入集群
+
+host02 重启完成后，启动 Patroni 服务，以 Replica 身份重新加入集群。
+
+```bash
+[root@host02 ~]# systemctl start patroni
+
+[root@host02 ~]# patronictl -c /etc/patroni.yml list watchdogmycluster
++ Cluster: watchdogmycluster (7585445892328633499) +-------------+-----+------------+-----+
+| Member   | Host       | Role    | State     | TL | Receive LSN | Lag | Replay LSN | Lag |
++----------+------------+---------+-----------+----+-------------+-----+------------+-----+
+| host01   | 10.0.12.9  | Leader  | running   |  3 |             |     |            |     |
+| host02   | 10.0.12.4  | Replica | streaming |  3 |   0/5A2E6F0 |   0 |  0/5A2E6F0 |   0 |
+| host03   | 10.0.16.11 | Replica | streaming |  3 |   0/5A2E6F0 |   0 |  0/5A2E6F0 |   0 |
++----------+------------+---------+-----------+----+-------------+-----+------------+-----+
+```
+
+#### 校验数据
+
+停止写入脚本，对比日志中成功写入的次数和表中的实际行数。
+
+```bash
+-- 日志中成功写入的次数
+[postgres@host01 ~]$ grep -c "10\.0\." /tmp/write_test.log
+
+-- 表中的实际行数
+[postgres@host01 ~]$ psql -h 192.168.231.140 -p 5000 -U postgres -d postgres -Atc "select count(*) from t;"
+```
+
+> 本文集群为异步流复制，主库宕机时，最后少量已提交但未传到备库的事务可能丢失。如果业务要求零数据丢失，需要开启 Patroni 的同步复制模式。
+
+
+## 参考地址
+
+1. https://postgreshelp.com/postgresql-17-ha-with-patroni/
+2. https://technotim.live/posts/postgresql-high-availability/#postgresql-certificates
+3. https://bufisa.com/2025/06/17/designing-a-highly-available-postgresql-architecture-using-haproxy-patroni-and-etcd/

@@ -1,0 +1,420 @@
+---
+slug: "plisql-nested-functions-types-out-parameters"
+title: "PL/iSQL Migration: Testing Nested Functions, %TYPE, %ROWTYPE and OUT Parameters"
+date: "2026-10-29"
+author: "qqtq"
+category: "IvorySQL"
+image: "/images/blog/covers/plisql-migration.webp"
+tags: ["Oracle", "PL/iSQL", "Migration"]
+description: "Test PL/iSQL session modes, nested functions, type attributes and OUT parameters on IvorySQL 5.4, with a separate IvorySQL 5.6 retest."
+---
+
+> About the author: 柒柒天晴 (qqtq), a database practitioner based in Urumqi. Recording and sharing database practice while continuing to learn.
+
+## Abstract
+
+FORCE VIEW can help with import order, but procedural code is harder to move. Existing PL/SQL commonly contains nested functions, `%TYPE` / `%ROWTYPE` references and OUT parameters. Moving these directly to `plpgsql` yields a mix of working code and immediate syntax errors. How much of this Oracle-style behavior does IvorySQL 5.4's PL/iSQL deliver? I installed the binary RPM from the official yum repository on Rocky Linux 9.5, without compiling source, and tested each feature. Installation and session pitfalls are collected in the appendix.
+
+## Environment and Software
+
+| Item | Value |
+| --- | --- |
+| OS | Rocky Linux 9.5 |
+| Database | PostgreSQL 18.4 (IvorySQL 5.4, RPM ivorysql5-5.4-a45b045) |
+| Installation directory | /usr/ivory-5, the RPM default |
+| Initialization | `initdb -D /usr/ivory-5/data`, without `-m`, producing a dual-mode instance |
+| Listening ports | 5432: PG port, sessions default to pg mode, local trust authentication, Unix socket in /tmp. 1521: dedicated Oracle port, the default `ivorysql.port`. |
+| Test entry points | 5432 for the full sequence; 1521 for supplemental tests |
+
+> PL/iSQL does not require an extra `CREATE EXTENSION`: plisql is already in `pg_language`, and `plisql.so` exists under `/usr/ivory-5/lib/postgresql/`. The important distinction is the connection entry point. Default initialization produces a dual-mode instance: port 1521 starts sessions in oracle mode, while 5432 defaults to pg. In a pg-mode session through 5432, PL/iSQL creation, invocation and substantive anonymous blocks are rejected; an empty anonymous block is an exception, as the supplemental test shows. The first gate below examines this restriction.
+>
+> Versions and reproduction: the main findings use IvorySQL 5.4, based on PostgreSQL 18.4. At testing time, the official yum repository defaulted to 5.6, based on 18.6. Pin the package to reproduce 5.4: `dnf install -y ivorysql5-5.4-a45b045`. Main outputs are from 5.4. I also reran the full tests on 5.6; results and differences appear in a separate section.
+
+## Tests: Session Mode and PL/iSQL Features
+
+Create a business table used by all subsequent functions. The following sessions connect through 5432, so switch each to oracle mode first. Through 1521, these `SET` statements are unnecessary:
+
+```sql
+SET ivorysql.compatible_mode TO 'oracle';
+CREATE TABLE t_emp (employee_id int PRIMARY KEY, employee_name text, salary numeric(10,2), dept_id int);
+INSERT INTO t_emp VALUES (1, 'Alice', 12000.00, 10), (2, 'Bob', 8000.00, 20);
+SELECT * FROM t_emp ORDER BY employee_id;
+
+ employee_id | employee_name |  salary  | dept_id 
+-------------+---------------+----------+---------
+           1 | Alice         | 12000.00 |      10
+           2 | Bob           |  8000.00 |      20
+(2 rows)
+```
+
+### First Gate: PL/iSQL through 5432 Requires Oracle Mode
+
+In a new session, before any `SET`, `SHOW` returns pg:
+
+```sql
+SHOW ivorysql.compatible_mode;
+
+ ivorysql.compatible_mode 
+--------------------------
+ pg
+(1 row)
+
+CREATE OR REPLACE FUNCTION f_tax_pgmode(p_salary numeric) RETURNS numeric LANGUAGE plisql AS $$ BEGIN RETURN p_salary * 0.1; END; $$;
+
+ERROR:  when ivorysql.compatible_mode is set to pg, any plisql procedural language function statement is not supported.
+LINE 1: ...ETURNS numeric LANGUAGE plisql AS $$ BEGIN RETURN p_salary *...
+                                                             ^
+```
+
+**Observation:** the error explicitly identifies compatibility mode as the condition. FORCE VIEW has the same prerequisite but no dedicated message: a pg session reports `syntax error at or near "FORCE"` because it lacks the Oracle parser. The gate affects more than creation. After switching back to pg, SELECT of an existing PL/iSQL function and CALL of an existing PL/iSQL procedure are rejected, as are anonymous blocks containing substantive statements. Empty blocks are the exception; the supplemental test below shows the output. PL/iSQL execution requires an oracle-mode session, selected with `SET` through 5432 or automatically through 1521.
+
+### Nested Functions
+
+Oracle procedures often put helper logic in local nested functions. PL/iSQL accepts the same form:
+
+```sql
+CREATE OR REPLACE FUNCTION f_tax(p_salary numeric) RETURNS numeric LANGUAGE plisql AS $$ DECLARE FUNCTION f_band(s numeric) RETURN numeric IS BEGIN IF s >= 10000 THEN RETURN s * 0.2; ELSE RETURN s * 0.1; END IF; END; BEGIN RETURN f_band(p_salary); END; $$;
+SELECT f_tax(12000.00), f_tax(8000.00);
+
+  f_tax   |  f_tax  
+----------+---------
+ 2400.000 | 800.000
+(1 row)
+
+CREATE OR REPLACE FUNCTION f_outer_ref(p_salary numeric) RETURNS numeric LANGUAGE plisql AS $$ DECLARE v_rate numeric := 0.1; FUNCTION f_adjust(s numeric) RETURN numeric IS BEGIN RETURN s * v_rate; END; BEGIN RETURN f_adjust(p_salary); END; $$;
+SELECT f_outer_ref(10000.00);
+
+ f_outer_ref 
+-------------
+    1000.000
+(1 row)
+```
+
+**Observation:** `FUNCTION ... IS ... END` declarations inside `DECLARE` can be invoked directly by the outer body. The banding logic works: 12000 selects 20%, and 8000 selects 10%. Nested functions can also read outer `DECLARE` variables such as `v_rate`, supporting closure-style code. Both examples can move from Oracle unchanged.
+
+Closures are intentional. The official design documentation explains that nested functions compile into the parent's datum table. Before execution, outer variables are forked for the nested function to read; required changes are written back on return. A nested function is not independently registered in `pg_proc`. Consequently, the count in Appendix 3 is seven plisql objects, excluding `f_band` and `f_adjust`.
+
+### The %TYPE Attribute
+
+`%TYPE` makes parameters and variables follow a table column's type. Creation emits two NOTICE messages identifying the resolved types:
+
+```sql
+CREATE OR REPLACE FUNCTION f_emp_salary(p_id t_emp.employee_id%TYPE) RETURNS t_emp.salary%TYPE LANGUAGE plisql AS $$ DECLARE v_sal t_emp.salary%TYPE; BEGIN SELECT salary INTO v_sal FROM t_emp WHERE employee_id = p_id; RETURN v_sal; END; $$;
+
+NOTICE:  type reference t_emp.employee_id%TYPE converted to pg_catalog.int4
+NOTICE:  type reference t_emp.salary%TYPE converted to pg_catalog.numeric
+CREATE FUNCTION
+
+SELECT f_emp_salary(1);
+
+ f_emp_salary 
+--------------
+     12000.00
+(1 row)
+```
+
+The `\df+` signature retains the `%TYPE` notation:
+
+```sql
+\df+ f_emp_salary
+ Schema |     Name     | Result data type  |     Argument data types     | Type | Volatility | Parallel |  Owner   | Security | Leakproof? | Access privileges | Language | Internal name | Description 
+--------+--------------+-------------------+-----------------------------+------+------------+----------+----------+----------+------------+-------------------+----------+---------------+-------------
+ public | f_emp_salary | t_emp.salary%TYPE | p_id t_emp.employee_id%TYPE | func | volatile   | unsafe   | ivorysql | definer  | no         |                   | plisql   |               | 
+(1 row)
+```
+
+Changing the column type does not require recreating the function:
+
+```sql
+ALTER TABLE t_emp ALTER COLUMN salary TYPE numeric(14,4);
+SELECT f_emp_salary(1);
+
+ f_emp_salary 
+--------------
+   12000.0000
+(1 row)
+```
+
+**Observation:** `%TYPE` resolves to the column's base type. NOTICE shows conversion to `pg_catalog.int4` / `pg_catalog.numeric`, without a precision modifier such as `numeric(10,2)`, while `\df+` retains `%TYPE`. Without a precision modifier, the returned scale follows the stored value: after changing the column to `numeric(14,4)`, the unchanged function displays four decimal places. According to the official design documentation, parsing records the function's dependency on `table.column` in `pg_depend`. A column-type change invalidates the function cache and forces recompilation on its next call, preventing a stale type reference.
+
+### The %ROWTYPE Attribute
+
+`%ROWTYPE` describes a complete row type and can be used for function or procedure parameters and local variables:
+
+```sql
+CREATE OR REPLACE FUNCTION f_row_salary(p_row t_emp%ROWTYPE) RETURNS numeric(12,2) LANGUAGE plisql AS $$ BEGIN RETURN p_row.salary + 100; END; $$;
+SELECT f_row_salary(t_emp) FROM t_emp WHERE employee_id = 1;
+
+ f_row_salary 
+--------------
+   12100.0000
+(1 row)
+
+CREATE OR REPLACE FUNCTION f_row_var(p_id int) RETURNS text LANGUAGE plisql AS $$ DECLARE v_row t_emp%ROWTYPE; BEGIN SELECT * INTO v_row FROM t_emp WHERE employee_id = p_id; RETURN v_row.employee_name || ' dept=' || v_row.dept_id::text; END; $$;
+SELECT f_row_var(2);
+
+  f_row_var  
+-------------
+ Bob dept=20
+(1 row)
+```
+
+Existing functions continue working after adding a column:
+
+```sql
+ALTER TABLE t_emp ADD COLUMN email text;
+UPDATE t_emp SET email = 'alice@example.com' WHERE employee_id = 1;
+SELECT f_row_var(1);
+
+   f_row_var   
+---------------
+ Alice dept=10
+(1 row)
+
+DO $$ DECLARE v_row t_emp%ROWTYPE; BEGIN SELECT * INTO v_row FROM t_emp WHERE employee_id = 1; RAISE NOTICE 'name=%, email=%', v_row.employee_name, v_row.email; END; $$ LANGUAGE plisql;
+
+NOTICE:  name=Alice, email=alice@example.com
+DO
+```
+
+**Observation:** `SELECT f_row_salary(t_emp)` passes the complete row as `p_row`. `SELECT * INTO v_row` assigns the row to a variable whose fields can be accessed by name. Both functions still work after adding `email`; an anonymous block's `%ROWTYPE` variable can read the new field immediately. Field resolution by name keeps existing functions working after a column is added.
+
+A note on displayed scale: `f_row_salary` declares `RETURNS numeric(12,2)` but returns `12100.0000`. The four decimal places come from the earlier change of `salary` to `numeric(14,4)`. A declared function return typmod does not limit the actual returned scale. I compared native PostgreSQL 13.23: SQL and plpgsql functions declaring the same `numeric(12,2)` both return `12100.0000`. This is existing upstream behavior: `pg_proc` stores a return-type OID in `prorettype` but no precision column. It is not a PL/iSQL-specific quirk.
+
+### OUT Parameters
+
+```sql
+CREATE OR REPLACE PROCEDURE p_get_emp(p_id int, p_name OUT text, p_salary OUT numeric) LANGUAGE plisql AS $$ BEGIN SELECT employee_name, salary INTO p_name, p_salary FROM t_emp WHERE employee_id = p_id; END; $$;
+DO $$ DECLARE v_name text; v_salary numeric; BEGIN CALL p_get_emp(1, v_name, v_salary); RAISE NOTICE 'name=%, salary=%', v_name, v_salary; END; $$ LANGUAGE plisql;
+
+NOTICE:  name=Alice, salary=12000.0000
+DO
+
+CREATE OR REPLACE PROCEDURE p_noassign(p_ret OUT int) LANGUAGE plisql AS $$ BEGIN NULL; END; $$;
+DO $$ DECLARE v_ret int := 99; BEGIN CALL p_noassign(v_ret); RAISE NOTICE 'ret=%', v_ret; END; $$ LANGUAGE plisql;
+
+NOTICE:  ret=<NULL>
+DO
+
+CALL p_get_emp(1, NULL, NULL);
+
+ p_name |  p_salary  
+--------+------------
+ Alice  | 12000.0000
+(1 row)
+```
+
+**Observation:** CALL inside an anonymous block receives OUT values. An unassigned OUT parameter returns NULL: `v_ret` is 99 before CALL and `<NULL>` afterward. Direct CALL in psql also works, accepting a literal in the OUT position and displaying the result as a table.
+
+### The plpgsql Comparison: What Really Needs Rewriting?
+
+Rerun the same function bodies with `LANGUAGE plpgsql`. We keep the oracle-mode session here because one `%ROWTYPE` parameter must first be resolved by the Oracle parser. Plpgsql itself does not require that mode; supplemental tests show creation and invocation in pg mode.
+
+```sql
+CREATE OR REPLACE FUNCTION f_tax_plpgsql(p_salary numeric) RETURNS numeric LANGUAGE plpgsql AS $$ DECLARE FUNCTION f_band(s numeric) RETURN numeric IS BEGIN IF s >= 10000 THEN RETURN s * 0.2; ELSE RETURN s * 0.1; END IF; END; BEGIN RETURN f_band(p_salary); END; $$;
+
+ERROR:  syntax error at or near "numeric"
+LINE 1: ... LANGUAGE plpgsql AS $$ DECLARE FUNCTION f_band(s numeric) R...
+                                                             ^
+CONTEXT:  invalid type name "f_band(s numeric) RETURN numeric IS BEGIN IF s >= 10000 THEN RETURN s * 0.2"
+
+CREATE OR REPLACE FUNCTION f_emp_salary_pg(p_id t_emp.employee_id%TYPE) RETURNS t_emp.salary%TYPE LANGUAGE plpgsql AS $$ DECLARE v_sal t_emp.salary%TYPE; BEGIN SELECT salary INTO v_sal FROM t_emp WHERE employee_id = p_id; RETURN v_sal; END; $$;
+
+NOTICE:  type reference t_emp.employee_id%TYPE converted to pg_catalog.int4
+NOTICE:  type reference t_emp.salary%TYPE converted to pg_catalog.numeric
+CREATE FUNCTION
+
+CREATE OR REPLACE FUNCTION f_row_salary_pg(p_row t_emp%ROWTYPE) RETURNS numeric(12,2) LANGUAGE plpgsql AS $$ BEGIN RETURN p_row.salary + 100; END; $$;
+SELECT f_row_salary_pg(t_emp) FROM t_emp WHERE employee_id = 1;
+
+ f_row_salary_pg 
+-----------------
+      12100.0000
+(1 row)
+
+CREATE OR REPLACE FUNCTION f_row_var_pg(p_id int) RETURNS text LANGUAGE plpgsql AS $$ DECLARE v_row t_emp%ROWTYPE; BEGIN SELECT * INTO v_row FROM t_emp WHERE employee_id = p_id; RETURN v_row.employee_name; END; $$;
+SELECT f_row_var_pg(2);
+
+ f_row_var_pg 
+---------------
+ Bob
+(1 row)
+
+CREATE OR REPLACE PROCEDURE p_get_emp_pg(p_id int, p_name OUT text, p_salary OUT numeric) LANGUAGE plpgsql AS $$ BEGIN SELECT employee_name, salary INTO p_name, p_salary FROM t_emp WHERE employee_id = p_id; END; $$;
+DO $$ DECLARE v_name text; v_salary numeric; BEGIN CALL p_get_emp_pg(1, v_name, v_salary); RAISE NOTICE 'name=%, salary=%', v_name, v_salary; END; $$ LANGUAGE plpgsql;
+
+NOTICE:  name=Alice, salary=12000.0000
+DO
+```
+
+**Observation:** plpgsql treats `FUNCTION f_band(s numeric)` inside DECLARE as a variable declaration and fails while parsing its type. Nested functions are a hard migration boundary: extract them into independent functions. `%TYPE` and OUT are native plpgsql features and work unchanged.
+
+One output can be misleading: `f_row_salary_pg(p_row t_emp%ROWTYPE)` succeeds above because the oracle-mode session lets IvorySQL's Oracle parser resolve `t_emp%ROWTYPE` into a row type before plpgsql receives the signature. Recreate it in a pg-mode session, equivalent here to native PostgreSQL parsing, and `%ROWTYPE` in the parameter position fails:
+
+```sql
+CREATE OR REPLACE FUNCTION f_row_salary_pg2(p_row t_emp%ROWTYPE) RETURNS numeric(12,2) LANGUAGE plpgsql AS $$ BEGIN RETURN p_row.salary + 100; END; $$;
+
+ERROR:  syntax error at or near "%"
+LINE 1: ...E OR REPLACE FUNCTION f_row_salary_pg2(p_row t_emp%ROWTYPE) ...
+                                                             ^
+```
+
+Use the table's row type instead, preserving the semantics:
+
+```sql
+CREATE OR REPLACE FUNCTION f_row_salary_pg3(p_row t_emp) RETURNS numeric(12,2) LANGUAGE plpgsql AS $$ BEGIN RETURN p_row.salary + 100; END; $$;
+SELECT f_row_salary_pg3(t_emp) FROM t_emp WHERE employee_id = 1;
+
+ f_row_salary_pg3 
+------------------
+       12100.0000
+(1 row)
+```
+
+Local `%ROWTYPE` variables do not have this problem: `v_row t_emp%ROWTYPE` can be declared and read in pg mode. Moving to plpgsql therefore requires two changes: extract nested functions and replace `%ROWTYPE` parameters with table row types.
+
+The mode gate also affects invocation. Start a new session through 5432, confirm its default pg mode with SHOW, then invoke both sets of objects again:
+
+### Supplemental Test: Calling Again in PG Mode
+
+```sql
+SHOW ivorysql.compatible_mode;
+
+ ivorysql.compatible_mode 
+--------------------------
+ pg
+(1 row)
+
+DO $$ BEGIN NULL; END; $$ LANGUAGE plisql;
+DO
+
+DO $$ DECLARE v int := 42; BEGIN RAISE NOTICE 'anon v=%', v; END; $$ LANGUAGE plisql;
+
+ERROR:  when ivorysql.compatible_mode is set to pg, any plisql procedural language function statement is not supported.
+LINE 1: DO $$ DECLARE v int := 42; BEGIN RAISE NOTICE 'anon v=%', v;...
+                               ^
+
+SELECT f_tax(12000.00);
+
+ERROR:  when ivorysql.compatible_mode is pg, can't execute a plisql procedural-language function
+LINE 1: SELECT f_tax(12000.00);
+               ^
+
+SELECT f_emp_salary_pg(1);
+
+ f_emp_salary_pg
+-----------------
+      12000.0000
+(1 row)
+
+CALL p_get_emp(1, NULL, NULL);
+
+ERROR:  when ivorysql.compatible_mode is pg, can't execute a plisql procedural-language function
+LINE 1: CALL p_get_emp(1, NULL, NULL);
+             ^
+```
+
+**Observation:** the restriction applies to PL/iSQL statements, not language registration. In the same pg-mode session, plpgsql functions run normally, while SELECT of existing plisql functions and CALL of procedures are rejected. An empty `DO $$ BEGIN NULL; END; $$ LANGUAGE plisql;` succeeds; a block containing substantive statements fails, consistent with the error's reference to function statements. Creation is only half the restriction: objects created before switching mode still exist, but cannot be invoked in this session because of its mode.
+
+### Supplemental Test: Dedicated Oracle Port 1521
+
+Default initialization listens on 5432 and 1521, the default `ivorysql.port`. New connections through 1521 start in oracle mode without `SET`:
+
+```sql
+SHOW ivorysql.compatible_mode;
+
+ ivorysql.compatible_mode 
+--------------------------
+ oracle
+(1 row)
+
+CREATE OR REPLACE FUNCTION f_probe_1521(p int) RETURN int IS BEGIN RETURN p + 1; END;
+SELECT f_probe_1521(41);
+
+ f_probe_1521 
+--------------
+           42
+(1 row)
+```
+
+**Observation:** the same instance and PL/iSQL syntax work through 1521 without any mode-changing statement. Both entry points reach the same database; the connection entry point determines the session mode. An instance initialized with `initdb -m pg` does not listen on the Oracle port and exposes only 5432.
+
+## Retesting on 5.6 and Observed Differences
+
+The official repository defaulted to 5.6, based on PostgreSQL 18.6. After installing the pinned version, I reran all tests unchanged: the 5432 sequence and a separate 1521 test. Numeric results and PL/iSQL statement behavior were identical. The dual-port behavior also matched: after default initialization, 5432 starts in pg mode and 1521 automatically uses oracle mode. Two differences deserve attention.
+
+**First, persisting `compatible_mode` is prohibited in 5.6 (PR #1372).** `ALTER USER/ROLE/DATABASE SET` cannot establish a lasting default in either tested version, but their failure modes differ. Version 5.6 rejects the statement directly:
+
+```sql
+ALTER ROLE ivorysql SET ivorysql.compatible_mode TO oracle;
+错误:  cannot set parameter "ivorysql.compatible_mode" via ALTER USER/ROLE/DATABASE SET/RESET
+提示:  Use SET/RESET command in session instead.
+```
+
+On 5.4, the same statement returns `ALTER ROLE`, suggesting success, but SHOW in a fresh session still returns `pg`. Inspection of `pg_db_role_setting` shows the role-level, all-database setting `{ivorysql.compatible_mode=oracle}` was stored but ignored at login. `ALTER DATABASE ... SET` likewise returns success without taking effect, even after restarting the instance. `ALTER SYSTEM SET` is rejected in both versions: 5.4 reports `parameter "ivorysql.compatible_mode" cannot be changed`; 5.6 localizes this under a Chinese locale. Although these runtime SQL routes fail, session SET is not the only entry into oracle mode: the dedicated Oracle port, default 1521, selects it automatically on a dual-mode instance. Port 5432 defaults to pg. `initdb -m pg` disables the Oracle entry point. The main sequence uses session SET through 5432; the supplemental test covers 1521.
+
+**Second, PL/SQL package-qualified variable name resolution is fixed (PR #1381).** These tests do not use package-qualified names and are unaffected.
+
+A display difference also matters: psql output from the 5.4 run is in English, while much of the 5.6 retest output is localized under a Chinese locale. NOTICE prefixes, `%TYPE` conversion messages, syntax errors and `\df+` headings are translated. Some errors localize only the prefix, leaving the message body in English, as with the `ALTER ROLE` error above. Unless identified otherwise, the English output shown in the article is from 5.4.
+
+## Migration Assessment Checklist
+
+Summary of the tested findings:
+
+| Feature | IvorySQL PL/iSQL | plpgsql | Migration action |
+| --- | --- | --- | --- |
+| Nested functions | Supported, including reads of outer variables. | Syntax error. | Extract into independent functions. |
+| `%TYPE` | Supported; resolves to the column's base type. | Native support. | No change. |
+| `%ROWTYPE` | Supported for parameters and local variables, with fields resolved by name. | Supported for locals; parameter syntax fails in pg mode. In oracle mode the Oracle parser resolves it first. | Replace parameter references with the table row type, e.g. `t_emp`; leave locals unchanged. |
+| OUT | Supported; unassigned OUT returns NULL. | Native for functions; procedures require PostgreSQL 14+. | No change, except rewriting procedures for a PG13 target. |
+
+Two code changes are required: extract nested functions and replace `%ROWTYPE` parameters with table row types. `%TYPE`, OUT and local `%ROWTYPE` declarations can remain unchanged.
+
+There is also a cross-cutting prerequisite: oracle mode gates PL/iSQL creation, invocation and anonymous blocks, apart from empty blocks. Check the target entry point first. A default-initialized instance accepts oracle-mode connections directly through 1521; sessions through 5432 need SET. Instances initialized with `initdb -m pg` provide no Oracle entry point. Runtime SQL cannot persist a different default in either tested version: 5.4 reports success without effect, while 5.6 rejects it directly. The retest section documents the details.
+
+Operationally, **the entry point determines the initial mode of a new session**. Through the dedicated Oracle port, default 1521, sessions begin in oracle mode without SET. Through 5432, they begin in the instance's default mode, pg in this test. With connection pooling on 5432, every connection, including reconnects and newly added pool connections, must execute SET. Configure the pool's `initSql` or an equivalent hook. Since runtime SQL cannot persist the default in these versions, select the entry point during deployment; see the retest section.
+
+For existing PL/SQL code, first establish how sessions select mode. Then scan for nested functions and extract them where necessary. Check table-structure differences behind `%TYPE` / `%ROWTYPE` references. Finally, use anonymous blocks to verify OUT behavior in batches. This feature inventory provides a practical estimate of the required changes.
+
+Test boundaries: this article covers nested functions, `%TYPE`, `%ROWTYPE` and OUT parameters, plus the oracle-session prerequisite for PL/iSQL. Packages, cursors and loops, exception handling, collection types, recursion, nested-function overloading and IN OUT parameter modes were not tested. Assess them separately if present in your existing code.
+
+Returning to the original question: IvorySQL 5.4 supports these Oracle patterns, including nested functions, unchanged. In plpgsql, `%TYPE`, OUT and local `%ROWTYPE` declarations need no changes; nested functions and `%ROWTYPE` parameters need rewriting. Establish the entry point first. PL/iSQL requires oracle mode: port 1521 satisfies this automatically, while every session through 5432 must switch. Without either route, creation, invocation and substantive anonymous blocks cannot run, apart from the empty-block exception.
+
+## Summary
+
+**PL/iSQL accepts Oracle-style nested functions, `%TYPE`, `%ROWTYPE` and OUT parameters. Moving the code to plpgsql requires extracting nested functions and replacing `%ROWTYPE` parameters with table row types; the other tested constructs can remain. Oracle mode is a PL/iSQL prerequisite; plpgsql works normally in pg mode, as the comparison output demonstrates.** In detail:
+
+- **Nested functions:** PL/iSQL supports them unchanged, including reads of outer DECLARE variables. Plpgsql rejects them, so extract them into independent functions.
+- **`%TYPE` / `%ROWTYPE`:** PL/iSQL supports both. Plpgsql supports `%TYPE` parameters and variables, but `%ROWTYPE` only for locals; use table row type `t_emp` for parameters. Resolution uses base column types and named fields, so changing column types or adding columns does not require recreating the tested functions.
+- **OUT parameters:** both support them, including NULL for an unassigned OUT and direct psql CALL. Function OUT parameters are supported; procedure OUT parameters require PostgreSQL 14 or later. Native PG13 rejects output parameters on procedures.
+- **Oracle mode:** required by PL/iSQL, not by plpgsql. Default initialization creates a dual-mode instance; port 1521 selects oracle mode directly, while 5432 defaults to pg and needs session SET. A PG-only instance initialized with `initdb -m pg` lacks the Oracle entry point. Runtime `ALTER ROLE/DATABASE/SYSTEM` cannot change the default effectively in the tested 5.4 and 5.6 environments. Use `initSql` with pooling.
+- **Assessment boundaries:** packages, cursors and loops, exception handling, collections, recursion, nested-function overloading and IN OUT parameter modes need separate testing.
+
+## Appendix: Three Installation and Session Pitfalls
+
+**1. The RPM does not create the log directory; an unwritable `-l` path prevents startup.** Initdb creates only the data directory. Create `/usr/ivory-5/log/` yourself. If `-l` points to a nonexistent path, pg_ctl reports only `could not start server`; the actual cause is on the preceding line:
+
+```bash
+waiting for server to start..../bin/sh:行1: /usr/ivory-5/log/ivory.log: 没有那个文件或目录
+pg_ctl: could not start server
+```
+
+After `mkdir -p /usr/ivory-5/log`, the original command succeeds. This is a log-path problem, unrelated to initdb. Check the target directory before startup, especially after restoring a snapshot: manually created directories from after the restore point will not be present.
+
+**2. Sessions through 5432 default to pg; switch to oracle before creating or invoking PL/iSQL objects.** Default initialization creates a dual-mode instance: 1521 selects oracle automatically and 5432 defaults to pg. In a pg-mode 5432 session, creation, invocation and substantive anonymous blocks are rejected. Run `SET ivorysql.compatible_mode TO 'oracle';` in every relevant session, or connect through 1521 without SET. Runtime defaults do not solve this: `ALTER ROLE/DATABASE SET` returns success without effect in 5.4 and is directly rejected in 5.6. See the retest section and the assessment checklist for pooling guidance.
+
+**3. Do not look for lanname in pg_proc.** It has no `lanname` column and reports `column "lanname" does not exist`. Join `pg_language` to group objects by language:
+
+```sql
+SELECT l.lanname, count(*) FROM pg_proc p JOIN pg_language l ON p.prolang = l.oid WHERE p.pronamespace = 'public'::regnamespace GROUP BY l.lanname ORDER BY l.lanname;
+
+ lanname | count 
+---------+-------
+ plisql  |     7
+ plpgsql |     4
+(2 rows)
+```
+
+These counts cover the sequence through the plpgsql comparison. Including `f_row_salary_pg3` and `f_probe_1521` from the supplemental tests yields eight plisql and five plpgsql objects, matching the complete 5.6 retest.
+
+The implementation explanations above refer to the official IvorySQL design documents on nested functions and on `%ROWTYPE` / `%TYPE`.

@@ -4,9 +4,10 @@ import { useMemo, useState } from "react";
 
 import Image from "next/image";
 
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 
 import { Link } from "@/i18n/navigation";
+import { resolveAuthor } from "@/lib/authors";
 import { cn } from "@/lib/utils";
 
 type BlogPost = {
@@ -125,6 +126,8 @@ export function BlogClient({ initialPosts, allPosts }: BlogClientProps) {
 }
 
 function BlogCard({ post }: { post: BlogPost }) {
+  const locale = useLocale();
+
   return (
     <Link
       href={post.path}
@@ -179,7 +182,7 @@ function BlogCard({ post }: { post: BlogPost }) {
       {/* Footer */}
       <div className="mt-auto flex items-center justify-between pt-3">
         <span className="text-foreground text-xs font-medium">
-          {resolveAuthorName(post.author)}
+          {resolveAuthor(post.author, locale).author}
         </span>
         <span className="text-muted-foreground border-border rounded-full border px-2.5 py-0.5 text-xs">
           {post.category}
@@ -187,14 +190,4 @@ function BlogCard({ post }: { post: BlogPost }) {
       </div>
     </Link>
   );
-}
-
-function resolveAuthorName(authorId: string): string {
-  const map: Record<string, string> = {
-    official: "IvorySQL Team",
-    Asif: "Asif Rehman",
-    "Yasir Hussain Shah": "Yasir Hussain Shah",
-    严少安: "Shawn Yan",
-  };
-  return map[authorId] || authorId;
 }

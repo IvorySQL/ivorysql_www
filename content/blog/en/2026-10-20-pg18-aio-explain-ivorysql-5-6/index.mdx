@@ -1,0 +1,694 @@
+---
+slug: "pg18-aio-explain-ivorysql-5-6"
+title: "Testing PostgreSQL 18 AIO and Execution Plans on IvorySQL 5.6"
+date: "2026-10-20"
+author: "Shan Jia"
+category: "IvorySQL"
+image: "/images/blog/covers/pg18-aio-explain.webp"
+tags: ["PostgreSQL 18", "AIO", "EXPLAIN"]
+description: "Hands-on tests of PostgreSQL 18 asynchronous I/O, observability and execution-plan details on IvorySQL 5.6, including io_uring kernel limitations."
+---
+
+> About the author: Shan Jia is a database enthusiast with KCA, KCP and KCM certifications, and an Oracle and MySQL practitioner holding Oracle OCM and MySQL 8.0 OCP certifications. He shares knowledge about databases and operations.
+
+**Abstract:** PostgreSQL 18 introduces asynchronous I/O and richer execution-plan information. On IvorySQL 5.6, based on PostgreSQL 18.6, I tested all three `io_method` modes, the `pg_aios` view, the new `io worker` backend type and `wal` I/O object in `pg_stat_io`, and cold reads after clearing the OS page cache. A key troubleshooting finding: selecting `io_method=io_uring` prevented startup because this host's 4.18 kernel did not implement io_uring. I also verified that `EXPLAIN (ANALYZE)` includes Buffers by default, index nodes expose `Index Searches`, explicit `WAL` produces WAL usage for writes, and `ANALYZE VERBOSE` reports resource statistics. The source article describes the WAL option as supported since PG17 and disabled by default.
+
+
+## 1. Environment and Software
+
+| Item | Value |
+| --- | --- |
+| Host | shanjiatst4.shanjia.com (192.168.40.153) |
+| OS / kernel | Rocky Linux 8.10 / 4.18.0-553.el8_10.x86_64 |
+| CPU / memory / disk | 4 vCPU / 7.5 GiB / NVMe 60 G, xfs root filesystem |
+| SELinux / firewalld | enforcing / running |
+
+| Software | Details |
+| --- | --- |
+| ivorysql5-5.6-74c405c.x86_64 | Server RPM, installation prefix /usr/ivory-5 |
+| Database kernel | PostgreSQL 18.6 |
+| Key build options | `--with-liburing`, `--with-numa`, `--with-zstd`, `--with-lz4`, `--with-llvm` |
+| shared_buffers | 128MB (16384 × 8kB) |
+
+## 2. AIO and Its Observability
+
+AIO is one of PG18's largest kernel changes. Start by listing its related settings.
+
+All following operations use `t_pg18`. Create it first, dropping a previous copy when rerunning the tests:
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d postgres -c "drop database if exists t_pg18;" -c "create database t_pg18;"
+DROP DATABASE
+CREATE DATABASE
+```
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "
+select name, setting, unit, context from pg_settings
+where name in ('io_method','io_combine_limit','io_max_combine_limit','io_max_concurrency',
+               'effective_io_concurrency','maintenance_io_concurrency','backend_flush_after','shared_buffers')
+order by 1;"
+            name            | setting | unit |  context
+----------------------------+---------+------+------------
+ backend_flush_after        | 0       | 8kB  | user
+ effective_io_concurrency   | 16      |      | user
+ io_combine_limit           | 16      | 8kB  | user
+ io_max_combine_limit       | 16      | 8kB  | postmaster
+ io_max_concurrency         | 64      |      | postmaster
+ io_method                  | worker  |      | postmaster
+ maintenance_io_concurrency | 16      |      | user
+ shared_buffers             | 16384   | 8kB  | postmaster
+```
+
+The central setting is `io_method`, with three permitted values and `worker` as the default:
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "
+select enumvals from pg_settings where name='io_method';"
+        enumvals
+------------------------
+ {sync,worker,io_uring}
+```
+
+Note that `io_max_concurrency` has `boot_val=-1` but resolves to `reset_val=64`. The `pg_aios` view lists asynchronous I/O handles currently in use: operations being prepared, executed or completed, rather than operating-system file handles. It has no rows while idle:
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -Atc "select count(*) from pg_aios;"
+0
+```
+
+The columns `state`, `operation`, `off`, `length` and `target` describe individual in-flight I/O operations:
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "\d pg_aios"
+                 View "pg_catalog.pg_aios"
+     Column      |   Type   | Collation | Nullable | Default 
+-----------------+----------+-----------+----------+---------
+ pid             | integer  |           |          | 
+ io_id           | integer  |           |          | 
+ io_generation   | bigint   |           |          | 
+ state           | text     |           |          | 
+ operation       | text     |           |          | 
+ off             | bigint   |           |          | 
+ length          | bigint   |           |          | 
+ target          | text     |           |          | 
+ handle_data_len | smallint |           |          | 
+ raw_result      | integer  |           |          | 
+ result          | text     |           |          | 
+ target_desc     | text     |           |          | 
+ f_sync          | boolean  |           |          | 
+ f_localmem      | boolean  |           |          | 
+ f_buffered      | boolean  |           |          | 
+```
+
+To see rows, sample while I/O is active. Clear the OS page cache, start a 499 MB sequential scan in the background with `max_parallel_workers_per_gather=0`, and poll `pg_aios` every 0.15 seconds in the foreground. One sample during the scan shows:
+
+```bash
+-- poll 2 --
+ aios_in_flight 
+----------------
+              5
+(1 row)
+
+  pid  | io_id |      state       | operation | length | target 
+-------+-------+------------------+-----------+--------+--------
+ 21646 |  1152 | COMPLETED_SHARED | readv     | 131072 | smgr
+ 21646 |  1153 | COMPLETED_SHARED | readv     | 131072 | smgr
+ 21646 |  1154 | SUBMITTED        | readv     | 131072 | smgr
+(3 rows)
+```
+
+State changes between `SUBMITTED`, submitted to an I/O worker, and `COMPLETED_SHARED`, completed. The operation is `readv` and the target is `smgr`. Use this view to inspect queue depth and state during bulk I/O, rather than file handles. A later `select count(*) from pg_aios;` returning zero simply means the instance was idle at that moment, not that the view failed to expose active I/O.
+
+Persistent `io worker` processes do the work. With the default `io_method=worker`, three appear when the instance starts:
+
+```bash
+$ ps -ef | grep 'io worker' | grep -v grep
+ivorysql   73231   73230  0 22:33 ?  00:00:00 postgres: io worker 0
+ivorysql   73232   73230  0 22:33 ?  00:00:00 postgres: io worker 1
+ivorysql   73233   73230  0 22:33 ?  00:00:00 postgres: io worker 2
+```
+
+`io worker` also appears in the `backend_type` dimension of `pg_stat_io`. The `bulkread` and `bulkwrite` contexts are not new in PG18: they have existed since PG16 introduced `pg_stat_io`. PG18 adds the `wal` I/O object and the `io worker` backend type. This instance returns fourteen backend-type rows and eight object/context combinations:
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -Atc "select distinct backend_type from pg_stat_io order by 1;"
+autovacuum launcher
+autovacuum worker
+background worker
+background writer
+checkpointer
+client backend
+io worker
+slotsync worker
+standalone backend
+startup
+walreceiver
+walsender
+walsummarizer
+walwriter
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -Atc "select distinct object, context from pg_stat_io order by 1,2;"
+relation|bulkread
+relation|bulkwrite
+relation|init
+relation|normal
+relation|vacuum
+temp relation|normal
+wal|init
+wal|normal
+```
+
+The binary really was built with io_uring support: it links to `liburing.so.2`, allowing the `io_uring` setting to be selected later:
+
+```bash
+$ ldd /usr/ivory-5/bin/postgres | grep uring
+	liburing.so.2 => /usr/ivory-5/bin/../lib/liburing.so.2 (0x00007f9c27ad9000)
+$ /usr/ivory-5/bin/pg_config --configure | tr ' ' '\n' | grep -i uring
+'--with-liburing'
+```
+
+## 3. Switching io_method: io_uring Prevents Startup
+
+Create a three-million-row table of approximately 499 MB for cold reads, then switch between the modes.
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "
+drop table if exists t_aio;
+create table t_aio (id int, payload text);
+insert into t_aio select g, 'payload-' || g || '-' || repeat('x', 120) from generate_series(1, 3000000) g;
+vacuum t_aio;" 
+INSERT 0 3000000
+VACUUM
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -Atc "select pg_size_pretty(pg_total_relation_size('t_aio'));"
+499 MB
+```
+
+`payload` is `'payload-' || g || '-' || repeat('x', 120)`. This makes rows wide enough for a roughly 499 MB scan and ensures that `payload like '%424242%'` deterministically matches three rows: IDs 424242, 1424242 and 2424242. Each decimal string contains the substring `424242`. Using only `repeat('x', 120)` would match no rows. The scan comparison would still work, but its count would be zero, a detail that can confuse reproduction.
+
+### 3.1 io_method = sync
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "alter system set io_method='sync';"
+ALTER SYSTEM
+$ systemctl restart ivorysql
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -Atc "show io_method;"
+sync
+$ ps -ef | grep 'io worker' | grep -v grep | wc -l
+0
+```
+
+After switching to `sync`, the I/O-worker process count falls to zero, as expected for this mode.
+
+### 3.2 io_method = worker
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "alter system set io_method='worker';"
+ALTER SYSTEM
+$ systemctl restart ivorysql
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -Atc "show io_method;"
+worker
+$ ps -ef | grep 'io worker' | grep -v grep | wc -l
+3
+```
+
+Switching back restores three `io worker` processes.
+
+### 3.3 io_method = io_uring: Startup Fails
+
+I selected `io_uring` in the same way. The instance failed to restart: `systemctl restart` failed and psql could not connect.
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "alter system set io_method='io_uring';"
+ALTER SYSTEM
+$ systemctl restart ivorysql
+Job for ivorysql.service failed because the control process exited with error code.
+See "systemctl status ivorysql.service" and "journalctl -xe" for details.
+$ psql -h 127.0.0.1 -p 5432 -c "select 1;"
+psql: error: connection to server at "127.0.0.1", port 5432 failed: Connection refused
+	Is the server running on that host and accepting TCP/IP connections?
+```
+
+Systemd shows repeated startup failures with status 1. After five attempts, its start-rate limit is reached.
+
+```bash
+# systemctl status ivorysql
+● ivorysql.service - IvorySQL 5.6 database server
+   Active: failed (Result: exit-code) since Sun 2026-09-20 22:49:53 CST; 24s ago
+  Process: 82824 ExecStart=/usr/ivory-5/bin/postgres -D /usr/ivory-5/data (code=exited, status=1/FAILURE)
+```
+
+The journal identifies the immediate cause:
+
+```bash
+# journalctl -u ivorysql --no-pager | grep -A2 io_uring | tail -6
+Sep 20 22:49:52 shanjiatst4.shanjia.com postgres[82824]: FATAL:  could not setup io_uring queue: Function not implemented
+Sep 20 22:49:52 shanjiatst4.shanjia.com postgres[82824]: HINT:  The kernel does not support io_uring.
+Sep 20 22:49:52 shanjiatst4.shanjia.com postgres[82824]: LOG:  database system is shut down
+```
+
+`could not setup io_uring queue: Function not implemented` indicates that the operating-system kernel does not support io_uring. This machine runs `4.18.0-553.el8_10.x86_64`; its Rocky 8 kernel lacks the implemented io_uring system calls, so linking to `liburing.so.2` is insufficient for this mode to start.
+
+Inspect the kernel further to verify that absence. No io_uring settings exist under `/proc/sys/kernel`:
+
+```bash
+# ls /proc/sys/kernel/ | grep -i uring
+(无 io_uring_disabled / io_uring_group 等开关)
+```
+
+`/proc/kallsyms` contains io_uring syscall symbols, but all six entry symbols resolve to the same address and are weak symbols (`W`):
+
+```bash
+# grep -E 'io_uring' /proc/kallsyms
+ffffffffb7d21450 W __ia32_sys_io_uring_enter
+ffffffffb7d21450 W __ia32_sys_io_uring_register
+ffffffffb7d21450 W __ia32_sys_io_uring_setup
+ffffffffb7d21450 W __x64_sys_io_uring_enter
+ffffffffb7d21450 W __x64_sys_io_uring_register
+ffffffffb7d21450 W __x64_sys_io_uring_setup
+```
+
+The canonical symbol at that address is a strong text symbol (`T`); the weak entries are aliases:
+
+```bash
+# grep '^ffffffffb7d21450' /proc/kallsyms | head -3
+ffffffffb7d21450 T sys_ni_syscall
+ffffffffb7d21450 W __ia32_compat_sys_s390_ipc
+ffffffffb7d21450 W __ia32_sys_io_uring_enter
+```
+
+The three io_uring syscall numbers, 425/426/427 on x86_64, all resolve to the unimplemented `sys_ni_syscall` stub in this kernel. Calling syscall 425 directly produces the same result as the PostgreSQL log:
+
+```bash
+# perl -e 'my $r = syscall(425, 256, 0, 0, 0, 0, 0); printf "ret=%s errno=%s\n", defined($r) ? $r : "undef", $!;'
+ret=-1 errno=Function not implemented
+```
+
+At this point, `postgresql.auto.conf` already contains `io_uring`:
+
+```bash
+# cat /usr/ivory-5/data/postgresql.auto.conf
+io_method = 'io_uring'
+```
+
+### 3.4 Troubleshooting and Recovery
+
+With the server down and psql inaccessible, SQL cannot change the setting. I edited `postgresql.auto.conf` directly, selected `worker` again and restarted the service.
+
+```bash
+# sed -i "s/io_method = 'io_uring'/io_method = 'worker'/" /usr/ivory-5/data/postgresql.auto.conf
+# systemctl start ivorysql
+# systemctl status ivorysql | grep Active
+   Active: active (running) since Sun 2026-09-20 22:50:18 CST; 3s ago
+# pg_isready -h 127.0.0.1 -p 5432
+127.0.0.1:5432 - accepting connections
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -Atc "show io_method;"
+worker
+```
+
+This is the combination of a binary with support and an OS kernel without it. On this tested 4.18 kernel, IvorySQL 5.6 can use `sync` and `worker`; io_uring requires a supporting OS environment. The PostgreSQL documentation cited here specifies linking liburing at build time but does not give a kernel-version threshold. This conclusion therefore applies only to the tested `4.18.0-553.el8_10.x86_64` environment. **Another lesson: `io_method` is a postmaster-level setting. A bad choice can prevent startup, so prepare to roll back by editing auto.conf before changing it.**
+
+## 4. Cold-Read Comparison: sync and worker
+
+Select the mode, clear the OS page cache, then execute the same large scan and compare elapsed time and `pg_stat_io` read volume. The table is still the 499 MB `t_aio`. Alternate the two modes with three samples each to avoid confounding the result with a fixed execution order.
+
+### 4.1 Two Measurement Pitfalls
+
+Define the measurement correctly before interpreting numbers:
+
+1. **`pg_stat_io` is cumulative since the last statistics reset.** In this environment, restarting did not reset it: a recorded round showed `client backend|bulkread` reads at 19028 both before and after restart. Do not interpret the values as totals since startup or as the reads from one query. Take a snapshot before and after each run and use the difference.
+2. **Disable parallel query.** I/O performed by parallel workers is counted under their own backend type, not under `client backend`. Without disabling parallelism, a 499 MB scan left only about 180 MB under the client backend, with the rest attributed to workers. Run `set max_parallel_workers_per_gather = 0` before each measured query.
+
+Snapshot SQL and cold-read SQL:
+
+```bash
+$ cat > snap.sql <<'EOF'
+-- read_bytes 直接取原始字节数：做差时避免 pg_size_pretty() 的取整误差
+select sum(reads) as reads, sum(read_bytes) as read_bytes,
+       sum(hits) as hits, sum(evictions) as evictions
+from pg_stat_io
+where object='relation' and backend_type='client backend' and context='bulkread';
+EOF
+$ cat > cold.sql <<'EOF'
+set max_parallel_workers_per_gather = 0;
+\timing on
+select count(*) from t_aio where payload like '%424242%';
+EOF
+```
+
+### 4.2 Test Design: Alternating Order, Three Samples per Mode
+
+The comparison must address sample size and order effects. With a fixed sync-then-worker sequence, worker always runs later, inheriting changes in page-cache state and system load. Even if the direction is right, the magnitude is unreliable. The formal order was `sync → worker → sync → worker → worker → sync`, three samples per mode, distributing time-related drift across both. Snapshot differences use raw bytes.
+
+Each block performs `alter system set io_method`, restarts and confirms the mode and worker count, uses `drop_caches` to create the cold-read window, takes a snapshot, runs a nonparallel cold scan and takes another snapshot. The script is `_第五轮P1_冷读交替多轮.sh`:
+
+```bash
+block() {
+  local mode=$1 tag=$2
+  printf "alter system set io_method = '%s';\n" "$mode" > /tmp/pg18v5/set_io.sql
+  runf /tmp/pg18v5/set_io.sql > /dev/null
+  systemctl restart ivorysql.service > /dev/null 2>&1
+  sleep 3
+  sync; echo 3 > /proc/sys/vm/drop_caches   # 重新制造冷读窗口
+  runf /tmp/pg18v5/snap.sql                 # before（原始字节数）
+  runf /tmp/pg18v5/cold.sql                 # 禁并行的冷读 count
+  runf /tmp/pg18v5/snap.sql                 # after
+}
+block sync s1;  block worker w1;  block sync s2
+block worker w2; block worker w3;  block sync s3
+```
+
+`runf` is the `psql -f` wrapper retained from previous rounds; it uses `su` to switch to the `ivorysql` account.
+
+### 4.3 Observed Output
+
+Full output from the first block, `sync`. The snapshot difference is the read volume for this run:
+
+```bash
+===== [s1] io_method=sync =====
+生效值: sync
+io worker 进程数: 0
+drop_caches: ok
+--- before ---
+ reads | read_bytes | hits  | evictions 
+-------+------------+-------+-----------
+ 40254 | 5078089728 | 10627 |       188
+(1 row)
+--- 冷读 ---
+ count 
+-------
+     3
+(1 row)
+Time: 1096.013 ms (00:01.096)
+--- after ---
+ reads | read_bytes | hits  | evictions 
+-------+------------+-------+-----------
+ 44247 | 5600985088 | 10627 |       188
+(1 row)
+```
+
+Subtracting before from after gives 44247 − 40254 = 3993 reads and 5600985088 − 5078089728 = 522895360 bytes. The six blocks, recorded in `第五轮P1_冷读交替多轮_原始回显.txt`, are:
+
+| Position | Mode | Cold-read time | Reads in run | Bytes read in run |
+| --- | --- | --- | --- | --- |
+| 1 | sync | 1096.013 ms | 3993 | 522895360 |
+| 2 | worker | 483.826 ms | 3993 | 522895360 |
+| 3 | sync | 588.823 ms | 3993 | 522895360 |
+| 4 | worker | 516.882 ms | 3993 | 522895360 |
+| 5 | worker | 466.301 ms | 3993 | 522895360 |
+| 6 | sync | 536.931 ms | 3993 | 522895360 |
+
+All six blocks read exactly 3993 operations and 522895360 bytes, or 498.5 MB, covering the roughly 499 MB table. `io_method` changes how the data is read, not how much is read.
+
+### 4.4 Findings
+
+Both modes read the same volume. The difference is elapsed time.
+
+Before the formal comparison, two fixed-order preliminary rounds also favored worker: 911→526 ms and 710→522 ms, a 26%–42% reduction. The direction agrees with the formal test, but two samples and fixed ordering make the magnitude unreliable. Treat them only as preliminary runs.
+
+Formal alternating-order results with three samples per mode:
+
+- **Worker is faster in all three positional pairs:** 1096.013→483.826 ms (56%), 588.823→516.882 ms (12%), and 536.931→466.301 ms (13%). In the last pair, sync runs in the final position after the system has already completed five blocks, yet worker is still 13% faster.
+- **Median:** sync 588.823 ms versus worker 483.826 ms, approximately 18% faster for worker. The initial sync sample, 1096.013 ms, is unusually high and was the first full scan after rebuilding `t_aio`. Excluding it leaves sync samples of 588.823/536.931 ms, narrowing the difference to 12%–13%.
+
+Limitations remain: three samples per mode, one connection, one sequential scan and NVMe. Concurrency and rotational disks were not tested. Claims that deeper queues, concurrency or slower disks would widen the gap remain speculation. The supported conclusion is: **for this host's single-connection sequential-scan workload, worker was consistently faster, with all three positional pairs favoring it and a median reduction of about 18%**. This article makes no claim for concurrent mixed workloads or rotational disks.
+
+## 5. EXPLAIN Enhancements
+
+PG18 increases the information exposed by EXPLAIN. Most visibly, `EXPLAIN (ANALYZE)` reports buffer usage even without explicitly specifying `BUFFERS`. Create test data:
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "
+drop table if exists t_exp;
+create table t_exp (id int primary key, cat int, val numeric, note text);
+insert into t_exp select g, g % 50, random()*1000, 'n-' || g from generate_series(1,300000) g;
+create index idx_t_exp_cat on t_exp (cat);
+analyze t_exp;"
+DROP TABLE
+CREATE TABLE
+INSERT 0 300000
+CREATE INDEX
+ANALYZE
+```
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "explain (analyze) select count(*) from t_exp;"
+                                                                QUERY PLAN
+------------------------------------------------------------------------------------------------------------------------------------------
+ Finalize Aggregate  (cost=5412.10..5412.11 rows=1 width=8) (actual time=10.308..12.086 rows=1.00 loops=1)
+   Buffers: shared hit=2206
+   ->  Gather  (cost=5411.88..5412.09 rows=2 width=8) (actual time=10.300..12.081 rows=2.00 loops=1)
+         Workers Planned: 1
+         Workers Launched: 1
+         Buffers: shared hit=2206
+         ->  Partial Aggregate  (cost=4411.88..4411.89 rows=1 width=8) (actual time=8.981..8.981 rows=2.00 loops=2)
+               Buffers: shared hit=2206
+               ->  Parallel Seq Scan on t_exp  (cost=0.00..3970.71 rows=176471 width=0) (actual time=0.005..5.154 rows=150000.00 loops=2)
+                     Buffers: shared hit=2206
+ Planning:
+   Buffers: shared hit=21 read=1
+ Planning Time: 0.109 ms
+ Execution Time: 12.104 ms
+(14 rows)
+```
+
+The `Buffers:` line appears despite no `BUFFERS` option. Index nodes also expose `Index Searches`:
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "explain (analyze) select * from t_exp where cat = 7;"
+                                                           QUERY PLAN
+------------------------------------------------------------------------------------------------------------------------------
+ Bitmap Heap Scan on t_exp  (cost=72.01..2354.76 rows=6140 width=27) (actual time=0.403..1.830 rows=6000.00 loops=1)
+   Recheck Cond: (cat = 7)
+   Heap Blocks: exact=2206
+   Buffers: shared hit=2206 read=8
+   ->  Bitmap Index Scan on idx_t_exp_cat  (cost=0.00..70.47 rows=6140 width=0) (actual time=0.236..0.237 rows=6000.00 loops=1)
+         Index Cond: (cat = 7)
+         Index Searches: 1
+         Buffers: shared read=8
+ Planning:
+   Buffers: shared hit=11
+ Planning Time: 0.136 ms
+ Execution Time: 1.947 ms
+(12 rows)
+```
+
+### WAL Counts for Writes Require an Explicit WAL Option
+
+WAL usage for writes is useful, but **is not enabled by default and is not new in PG18**. As described in the source article, the option has been supported since PG17 and must be explicitly included to produce output. A control test on the same machine shows no WAL lines without it:
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "begin; explain (analyze) update t_exp set val=val+1 where cat=7; rollback;"
+BEGIN
+                                                              QUERY PLAN
+----------------------------------------------------------------------------------------------------------------------
+ Update on t_exp  (cost=72.01..2370.11 rows=0 width=0) (actual time=16.452..16.453 rows=0.00 loops=1)
+   Buffers: shared hit=62402 read=1 dirtied=53 written=50
+   ->  Bitmap Heap Scan on t_exp  (cost=72.01..2370.11 rows=6140 width=38) (actual time=0.371..2.548 rows=6000.00 loops=1)
+         Recheck Cond: (cat = 7)
+         Heap Blocks: exact=2206
+         Buffers: shared hit=2214
+         ->  Bitmap Index Scan on idx_t_exp_cat  (cost=0.00..70.47 rows=6140 width=0) (actual time=0.172..0.172 rows=6000.00 loops=1)
+               Index Cond: (cat = 7)
+               Index Searches: 1
+               Buffers: shared hit=8
+ Planning:
+   Buffers: shared hit=3
+ Planning Time: 0.046 ms
+ Execution Time: 16.505 ms
+(14 rows)
+
+ROLLBACK
+```
+
+With `wal` explicitly enabled, `WAL: records=... bytes=...` appears on both the write node, Update, and the read node, Bitmap Heap Scan:
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "begin; explain (analyze, wal) update t_exp set val=val+1 where cat=7; rollback;"
+BEGIN
+                                                              QUERY PLAN
+---------------------------------------------------------------------------------------------------------------------------------------
+ Update on t_exp  (cost=72.95..2416.88 rows=0 width=0) (actual time=20.011..20.012 rows=0.00 loops=1)
+   Buffers: shared hit=68431 dirtied=49 written=49
+   WAL: records=24097 bytes=1709068
+   ->  Bitmap Heap Scan on t_exp  (cost=72.95..2416.88 rows=6262 width=38) (actual time=0.419..5.087 rows=6000.00 loops=1)
+         Recheck Cond: (cat = 7)
+         Heap Blocks: exact=2250
+         Buffers: shared hit=2263
+         WAL: records=1 bytes=52
+         ->  Bitmap Index Scan on idx_t_exp_cat  (cost=0.00..71.39 rows=6262 width=0) (actual time=0.232..0.232 rows=11999.00 loops=1)
+               Index Cond: (cat = 7)
+               Index Searches: 1
+               Buffers: shared hit=13
+ Planning Time: 0.064 ms
+ Execution Time: 20.028 ms
+(14 rows)
+
+ROLLBACK
+```
+
+The Update node exposes write-related counters such as `dirtied` and `written`. The `WAL usage: ... buffers full` lines from VACUUM/ANALYZE use related resource accounting, discussed next. I also tried a `SAMPLE` option; this version does not recognize it:
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "explain (analyze, sample 10) select count(*) from t_exp;"
+ERROR:  unrecognized EXPLAIN option "sample"
+LINE 1: explain (analyze, sample 10) select count(*) from t_exp;
+                          ^
+```
+
+Observed boundaries: Buffers appears by default; Index Searches is available; WAL counters require the explicit option and are not default output; and SAMPLE does not exist in this version. The source article dates WAL-option support to PG17.
+
+## 6. ANALYZE VERBOSE and vacuum_truncate
+
+`ANALYZE VERBOSE` adds resource statistics at the end: average read/write rates, buffer usage, WAL usage and CPU time. These are INFO-level messages, so inspect psql's stderr directly:
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "analyze (verbose) t_exp;"
+INFO:  analyzing "public.t_exp"
+INFO:  "t_exp": scanned 2295 of 2295 pages, containing 300000 live rows and 11998 dead rows; 30000 rows in sample, 300000 estimated total rows
+INFO:  finished analyzing table "t_pg18.public.t_exp"
+avg read rate: 0.000 MB/s, avg write rate: 0.000 MB/s
+buffer usage: 2763 hits, 0 reads, 0 dirtied
+WAL usage: 8 records, 0 full page images, 4806 bytes, 0 buffers full
+system usage: CPU: user: 0.05 s, system: 0.00 s, elapsed: 0.05 s
+ANALYZE
+```
+
+PG18 introduces the `vacuum_truncate` GUC, described as enabling vacuum to truncate empty pages at the end of a table. It defaults to `on` with user context. Delete 99,000 of 100,000 rows and VACUUM once with off and once with on, comparing table-file sizes.
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "
+drop table if exists t_vt;
+create table t_vt (id int primary key, pad text);
+insert into t_vt select g, repeat('x', 100) from generate_series(1,100000) g;
+select pg_relation_size('t_vt') as before_size;
+delete from t_vt where id > 1000;"
+DROP TABLE
+CREATE TABLE
+INSERT 0 100000
+ before_size
+-------------
+    14131200
+DELETE 99000
+```
+
+With `vacuum_truncate=off`, VACUUM retains the empty tail pages: all 1725 remain.
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "
+set vacuum_truncate=off; vacuum (verbose) t_vt;
+select pg_relation_size('t_vt') as size_truncate_off;"
+INFO:  vacuuming "t_pg18.public.t_vt"
+pages: 0 removed, 1725 remain, 1725 scanned (100.00% of total), 0 eagerly scanned
+tuples: 99000 removed, 1000 remain, 0 are dead but not yet removable
+ size_truncate_off
+-------------------
+          14131200
+```
+
+With the default on, VACUUM truncates from 1725 to 18 pages, reducing the file from 14 MB to 147 KB:
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "
+reset vacuum_truncate; vacuum (verbose) t_vt;
+select pg_relation_size('t_vt') as size_truncate_on;"
+INFO:  vacuuming "t_pg18.public.t_vt"
+INFO:  table "t_vt": truncated 1725 to 18 pages
+pages: 1707 removed, 18 remain, 1 scanned (0.06% of total), 0 eagerly scanned
+ size_truncate_on
+------------------
+           147456
+```
+
+| vacuum_truncate | Table size after VACUUM | Pages |
+| --- | --- | --- |
+| off | 14131200 bytes | 1725 |
+| on, default | 147456 bytes | 18 |
+
+This setting is useful when reclaiming tail space from temporary tables or tables left mostly empty after a one-off workload. For continuously growing tables, the intuition is that off might avoid truncation overhead. Two further tests examine that intuition.
+
+**Case 1: append-only growth, without deletes.** Create identical `t_vt_grow_on` and `t_vt_grow_off` tables with 100,000 initial rows. VACUUM after each additional 100,000 rows. The key output from the on side is:
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -f vt_grow_on.sql
+--- on：初始 vacuum ---
+pages: 0 removed, 1725 remain, 1725 scanned (100.00% of total), 0 eagerly scanned
+VACUUM
+Time: 8.233 ms
+ grow_on_size 
+--------------
+     14131200
+--- on：追加 10 万行后再 vacuum ---
+pages: 0 removed, 3449 remain, 1725 scanned (50.01% of total), 0 eagerly scanned
+VACUUM
+Time: 4.078 ms
+ grow_on_size 
+--------------
+     28254208
+--- on：再追加 10 万行后再 vacuum ---
+pages: 0 removed, 5173 remain, 1725 scanned (33.35% of total), 0 eagerly scanned
+VACUUM
+Time: 4.136 ms
+ grow_on_size 
+--------------
+     42377216
+```
+
+The script loops over `vacuum (verbose)` and `select pg_relation_size(...)` after `set vacuum_truncate = on;`. Rerun it with off for the other table. Both tables show identical page lines and per-round file sizes, with similar elapsed times:
+
+| Round | on: bytes | off: bytes | on: VACUUM | off: VACUUM |
+| --- | --- | --- | --- | --- |
+| Initial | 14131200 | 14131200 | 8.233 ms | 3.571 ms |
+| Append 100,000 rows | 28254208 | 28254208 | 4.078 ms | 4.167 ms |
+| Append another 100,000 | 42377216 | 42377216 | 4.136 ms | 3.479 ms |
+
+Append-only growth provides no empty tail to truncate. The verbose output has no truncated line. Thus the claim that off saves a truncation cost in pure-growth workloads has no support in this test: there is no truncation to avoid.
+
+**Case 2: repeatedly delete and refill the tail.** Here space reclamation differs. On truncates to 144 KB each round, requiring the next insert to extend back to 14 MB; off keeps the 14 MB high-water mark and reuses free pages. Timing is harder to interpret if the same table is tested sequentially because the first run changes cache and index state for the second. Instead use two identical independent tables: `t_vt_a` with on and `t_vt_b` with off. For each round, delete the last 99,000 rows, VACUUM VERBOSE and insert 99,000 rows again. Run three rounds in order a→b, b→a, a→b. The script is `_第五轮P2_vt独立双表.sh`, and the raw record is `第五轮P2_vt独立双表_原始回显.txt`:
+
+| Round and order | a(on) VACUUM | a(on) INSERT | b(off) VACUUM | b(off) INSERT |
+| --- | --- | --- | --- | --- |
+| 1, a first | 9.516 ms | 93.346 ms | 5.750 ms | 93.218 ms |
+| 2, b first | 9.392 ms | 94.546 ms | 6.075 ms | 82.664 ms |
+| 3, a first | 13.091 ms | 85.341 ms | 5.055 ms | 75.438 ms |
+| Mean | 10.666 ms | 91.078 ms | 5.627 ms | 83.773 ms |
+
+Verbose output provides direct space evidence in every round: on reports `truncated 1725 to 18 pages`, or 14131200→147456 bytes; off reports `0 removed, 1725 remain`. After reinsertion, both return to 14131200 bytes.
+
+After three alternating rounds on independent tables:
+
+- **VACUUM:** on is about 5.0 ms slower per round, with means of 10.666 versus 5.627 ms and the same direction in all three rounds. This is the fixed truncation cost, including `ftruncate` and metadata updates.
+- **Reinsertion:** on averages about 7.3 ms slower, 91.078 versus 83.773 ms. All rounds favor off, although the first is nearly tied. Truncation reduces the file to 144 KB, requiring re-extension to 14 MB; off reuses retained free pages.
+- **DELETE:** both are similar, with means of 24.9 versus 23.8 ms, as expected because deletion is not affected by truncation.
+
+The combined difference is approximately 12 ms per round, in exchange for reducing the file from 14 MB to 144 KB. This is a small 100,000-row, 14 MB table. Larger tables may incur larger absolute truncation and extension costs, but were not tested. Official documentation also notes a brief ACCESS EXCLUSIVE lock during truncation; contention on busy tables was not tested here.
+
+The revised conclusion depends on the workload. **When tail pages become empty**, off retains the high-water mark while on shrinks the file. Choose according to whether reclaiming space is worth the measured overhead, about 12 ms per round for this small-table test with three alternating rounds on independent tables. **For pure-growth tables, neither mode showed a measurable difference**; there was no truncation cost to save.
+
+## 7. Final State
+
+Restore the stable configuration and verify:
+
+```bash
+$ systemctl is-active ivorysql
+active
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -Atc "show io_method;"
+worker
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -Atc "select count(*) from pg_aios;"
+0
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -Atc "select pg_size_pretty(pg_total_relation_size('t_vt'));"
+2392 kB
+```
+
+The last number exceeds the 147456 bytes in Section 6 because they measure different things. That figure is the 18-page heap from `pg_relation_size`. Here `pg_total_relation_size` also includes indexes. The final VACUUM reports `index "t_vt_pkey": pages: 276 in total, 270 newly deleted`; VACUUM does not truncate those index pages. Including the 276 index pages yields 2449408 bytes, or 2392 kB.
+
+The three AIO modes, `pg_aios`, new `pg_stat_io` dimensions, EXPLAIN Buffers/Index Searches/explicit WAL counters, ANALYZE VERBOSE resource statistics and vacuum_truncate space reclamation were tested on `PostgreSQL 18.6 (IvorySQL 5.6)`. The io_uring mode was unavailable on the tested 4.18 OS kernel; the failure was recorded and the instance recovered.
+
+## References
+
+The following PostgreSQL 18 documentation pages define the terms, defaults and caveats used here:
+
+- [`pg_aios`](https://www.postgresql.org/docs/18/view-pg-aios.html): definitions of asynchronous I/O handles and their columns; the basis for Section 2's distinction from operating-system file handles.
+- [`pg_stat_io`](https://www.postgresql.org/docs/18/monitoring-stats.html): I/O statistics by object, context and backend type, used in Sections 2 and 4.
+- [`EXPLAIN`](https://www.postgresql.org/docs/18/sql-explain.html): Buffers, Index Searches, WAL and related output, used in Section 5.
+- [`ANALYZE`](https://www.postgresql.org/docs/18/sql-analyze.html): VERBOSE resource statistics for read/write rates, buffers, WAL and CPU, used in Section 6.
+- [Vacuum configuration](https://www.postgresql.org/docs/18/runtime-config-vacuum.html): vacuum_truncate, its default on value and the ACCESS EXCLUSIVE lock needed for truncation, used in Section 6.

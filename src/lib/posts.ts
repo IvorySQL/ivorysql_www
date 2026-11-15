@@ -2,6 +2,8 @@ import fs from "fs";
 import matter from "gray-matter";
 import path from "path";
 
+import { generateReadingTime } from "./reading-time";
+
 function postsDirectory(locale: string): string {
   return path.join(process.cwd(), "content/blog", locale);
 }
@@ -167,17 +169,4 @@ function formatDate(dateStr: string, locale: string): string {
     month: "short",
     year: "numeric",
   });
-}
-
-function generateReadingTime(content: string, locale: string): string {
-  if (locale === "zh") {
-    const charsPerMinute = 400;
-    const charCount = content.replace(/\s+/g, "").length;
-    const minutes = Math.max(1, Math.ceil(charCount / charsPerMinute));
-    return `${minutes} 分钟阅读`;
-  }
-  const wordsPerMinute = 200;
-  const wordCount = content.trim().split(/\s+/).length;
-  const minutes = Math.ceil(wordCount / wordsPerMinute);
-  return `${minutes} min read`;
 }

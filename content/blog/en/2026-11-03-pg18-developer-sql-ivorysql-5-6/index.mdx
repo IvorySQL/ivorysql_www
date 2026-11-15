@@ -1,0 +1,650 @@
+---
+slug: "pg18-developer-sql-ivorysql-5-6"
+title: "Testing PostgreSQL 18 Developer and SQL Features on IvorySQL 5.6"
+date: "2026-11-03"
+author: "Shan Jia"
+category: "IvorySQL"
+image: "/images/blog/covers/pg18-developer-sql.webp"
+tags: ["PostgreSQL 18", "SQL", "Compatibility"]
+description: "Compare PG and Oracle modes for UUIDv7, CRC functions, virtual generated columns, RETURNING and temporal constraints on IvorySQL 5.6."
+---
+
+> About the author: Shan Jia is a database enthusiast with KCA, KCP and KCM certifications, and an Oracle and MySQL practitioner holding Oracle OCM and MySQL 8.0 OCP certifications. He shares knowledge about databases and operations.
+
+**Abstract:** I tested several developer-facing SQL features on IvorySQL 5.6, based on PostgreSQL 18.6: PG18's `uuidv7`; the companion `uuid_extract_version` / `uuid_extract_timestamp` functions introduced in PG17; PG18's `crc32` / `crc32c`; VIRTUAL generated columns; `RETURNING OLD/NEW` pseudo-row references, including `MERGE` and `merge_action()`; and `WITHOUT OVERLAPS` temporal uniqueness constraints with `PERIOD` foreign keys. All tests compare port 5432 (PG mode) with port 1521 (Oracle mode), using unmodified terminal output as evidence. Three practical traps emerged: `WITHOUT OVERLAPS` uses a GiST exclusion index and requires `btree_gist` for the scalar column, otherwise table creation reports no default operator class; both temporal-constraint features raise syntax errors in Oracle mode and are usable only in PG mode; and `uuidv7(INTERVAL ...)` fails to parse in Oracle mode even though both overloads exist in `pg_proc` through either port. The author reports that this parser difference is being fixed. I also document two failed attempts at `RETURNING` aliases: the correct form is `RETURNING WITH (OLD AS o, NEW AS n)`, with mandatory parentheses.
+
+
+## 1. Environment and Connections
+
+| Item | Value |
+|---|---|
+| Host | shanjiatst4.shanjia.com (192.168.40.153) |
+| OS | Rocky Linux 8.10 |
+| Database | IvorySQL 5.6 |
+| Listening ports | 5432 (PG mode) / 1521 (Oracle mode) |
+| Test database | t_pg18, created for these tests |
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -c "drop database if exists t_pg18;"
+DROP DATABASE
+$ psql -h 127.0.0.1 -p 5432 -c "create database t_pg18;"
+CREATE DATABASE
+```
+
+
+
+## 2. UUIDv7 and Checksum Functions
+
+### 2.1 uuidv7
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -Atc "select uuidv7();"
+01a0ca06-a9a8-75e7-a105-67c33069e7fc
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "select uuidv7(), uuidv7();"
+                uuidv7                |                uuidv7
+--------------------------------------+--------------------------------------
+ 01a0ca06-a9f7-717d-8cee-d15e89b80b97 | 01a0ca06-a9f7-7194-a3b8-9e8102a1d71e
+(1 row)
+```
+
+UUIDv7 starts with a millisecond timestamp. Compared with the fully random UUIDv4, this improves primary-key locality and reduces index splits. Two consecutive calls have the same time prefix within one millisecond but different random bits.
+
+### 2.2 The Two Companion Extraction Functions
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "
+select uuid_extract_version(uuidv7()) as v7_ver,
+       uuid_extract_timestamp(uuidv7()) as v7_ts,
+       uuid_extract_version(gen_random_uuid()) as v4_ver,
+       uuid_extract_timestamp(gen_random_uuid()) as v4_ts;"
+ v7_ver |           v7_ts            | v4_ver | v4_ts
+--------+----------------------------+--------+-------
+      7 | 2026-09-23 00:50:29.572+08 |      4 |
+(1 row)
+```
+
+These extraction functions are not new in PG18: `uuid_extract_version` and `uuid_extract_timestamp` arrived in PG17. IvorySQL 5.6, based on PostgreSQL 18.6, includes them. We test them because they expose the version and timestamp of PG18's new `uuidv7`: a v7 UUID yields version 7 and a timestamp, while v4 has no extractable timestamp and returns NULL.
+
+### 2.3 Time Ordering
+
+UUIDv7 promises time-ordered generation. Generate six values to inspect it:
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "
+select g as i, u, uuid_extract_timestamp(u) as ts
+from (select g, uuidv7() as u from generate_series(1,6) g) s order by g;"
+ i |                  u                   |             ts
+---+--------------------------------------+----------------------------
+ 1 | 01a0ca06-aa94-78fb-8b35-66ca82f240fe | 2026-09-23 00:50:29.652+08
+ 2 | 01a0ca06-aa94-7922-8676-b514fcf95abe | 2026-09-23 00:50:29.652+08
+ 3 | 01a0ca06-aa94-792b-aa03-1e0eeea78ff6 | 2026-09-23 00:50:29.652+08
+ 4 | 01a0ca06-aa94-7932-a471-5abebbdc3e8e | 2026-09-23 00:50:29.652+08
+ 5 | 01a0ca06-aa94-7942-b21e-140bf9cf313b | 2026-09-23 00:50:29.652+08
+ 6 | 01a0ca06-aa94-794a-8848-00fb8980c4da | 2026-09-23 00:50:29.652+08
+(6 rows)
+```
+
+All six UUIDs generated within one millisecond share the same timestamp, while their binary prefixes remain strictly increasing. Ordering within a millisecond uses the random-bit portion rather than a simple counter.
+
+### 2.4 crc32 / crc32c
+
+I also tested PG18's new `crc32` and `crc32c`. Their inputs are case-sensitive: changing a single character in the string changes the result completely.
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "select crc32('IvorySQL 5.6') as crc32, crc32c('IvorySQL 5.6') as crc32c;"
+   crc32    |   crc32c
+------------+------------
+ 2213373035 | 2954926063
+(1 row)
+```
+
+### 2.5 A Real Boundary: uuidv7 with an INTERVAL Argument
+
+PG18 includes a `uuidv7` overload accepting an `interval` to shift the generated UUID's time, for example backdating by two hours for reconciliation. Run the same statement through both ports:
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "select uuidv7(INTERVAL '2 hours');"
+                uuidv7
+--------------------------------------
+ 01a0ca74-8833-7857-a295-5c577d0b2f49
+(1 row)
+```
+
+PG mode returns normally. Through the Oracle-mode port:
+
+```bash
+$ psql -h 127.0.0.1 -p 1521 -d t_pg18 -c "select uuidv7(INTERVAL '2 hours');"
+ERROR:  syntax error at or near ")"
+LINE 1: select uuidv7(INTERVAL '2 hours');
+                                        ^
+```
+
+**Conclusion: this is an Oracle-mode parser difference in IvorySQL, not a missing function.** Both ports expose the functions in `pg_proc`:
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -Atc "select proname from pg_proc where proname in ('uuidv4','uuidv7','uuid_extract_version','uuid_extract_timestamp') order by 1;"
+uuid_extract_timestamp
+uuid_extract_version
+uuidv4
+uuidv7
+uuidv7
+$ psql -h 127.0.0.1 -p 1521 -d t_pg18 -Atc "select proname from pg_proc where proname in ('uuidv4','uuidv7','uuid_extract_version','uuid_extract_timestamp') order by 1;"
+uuid_extract_timestamp
+uuid_extract_version
+uuidv4
+uuidv7
+uuidv7
+```
+
+The two `uuidv7` entries are the no-argument and interval overloads. The author reports that the parser difference is being fixed, with **Oracle-mode support for `uuidv7(INTERVAL ...)` expected in the next release**. Until then, Oracle-mode applications needing shifted timestamps can generate a no-argument UUID and adjust the relevant business timestamp field separately.
+
+## 3. VIRTUAL Generated Columns
+
+PG18 supports `VIRTUAL` generated columns: their values are computed when read rather than stored on disk. IvorySQL 5.6 follows upstream and supports them out of the box.
+
+Create a table with `amount` defined as `qty * price`. Without `STORED`, the default is `VIRTUAL`:
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "
+create table t_gencol (
+  id int primary key,
+  qty numeric,
+  price numeric,
+  amount numeric generated always as (qty * price)   -- 不写 STORED
+);
+select attname,
+       case attgenerated when 'v' then 'VIRTUAL' when 's' then 'STORED' else '非生成列' end as gen_kind
+from pg_attribute where attrelid='t_gencol'::regclass and attnum>0 order by attnum;"
+ attname | gen_kind
+---------+----------
+ id      | 非生成列
+ qty     | 非生成列
+ price   | 非生成列
+ amount  | VIRTUAL
+(4 rows)
+```
+
+Create an explicitly `STORED` counterpart for comparison:
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "
+create table t_gencol_stored (
+  id int primary key,
+  qty numeric,
+  price numeric,
+  amount numeric generated always as (qty * price) stored
+);
+select attname,
+       case attgenerated when 'v' then 'VIRTUAL' when 's' then 'STORED' else '非生成列' end as gen_kind
+from pg_attribute where attrelid='t_gencol_stored'::regclass and attnum>0 order by attnum;"
+ attname | gen_kind
+---------+----------
+ id      | 非生成列
+ qty     | 非生成列
+ price   | 非生成列
+ amount  | STORED
+(4 rows)
+```
+
+To verify that virtual values are not stored, insert 20,000 rows into each table and compare heap sizes:
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "
+insert into t_gencol select g, g, g from generate_series(1,20000) g;
+insert into t_gencol_stored select g, g, g from generate_series(1,20000) g;
+select relname, pg_size_pretty(pg_relation_size(oid)) as heap_size
+from pg_class where relname in ('t_gencol','t_gencol_stored') order by 1;"
+     relname     | heap_size
+-----------------+-----------
+ t_gencol        | 944 kB
+ t_gencol_stored | 1104 kB
+(2 rows)
+```
+
+With the same 20,000 rows, the STORED table is clearly larger: the virtual column's values do not occupy stored space.
+
+Both tables return the same results. Use `id=20001` here: the first 20,000 rows already occupy IDs 1 through 20000, so inserting `id=10` would violate the primary key.
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "
+insert into t_gencol (id, qty, price) values (20001, 10, 20);
+select id, qty, price, amount from t_gencol where id = 20001;"
+  id   | qty | price | amount
+-------+-----+-------+--------
+ 20001 |  10 |    20 |    200
+(1 row)
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "
+insert into t_gencol_stored (id, qty, price) values (20001, 10, 20);
+select id, qty, price, amount from t_gencol_stored where id = 20001;"
+  id   | qty | price | amount
+-------+-----+-------+--------
+ 20001 |  10 |    20 |    200
+(1 row)
+```
+
+`qty` and `price` are `numeric` without a declared scale, so the displayed values are integers without `.00`. Their values agree with the STORED counterpart; only the storage differs.
+
+I also checked two restrictions. A virtual column cannot be indexed:
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "create index on t_gencol (amount);"
+ERROR:  indexes on virtual generated columns are not supported
+```
+
+A virtual column can have `NOT NULL`, lifting a restriction from before PG18:
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "create table t_gencol_nn (id int, v int not null generated always as (id*10) virtual);"
+CREATE TABLE
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "\d t_gencol_nn"
+                       Table "public.t_gencol_nn"
+ Column |  Type   | Collation | Nullable |            Default
+--------+---------+-----------+----------+-------------------------------
+ id     | integer |           |          |
+ v      | integer |           | not null | generated always as (id * 10)
+```
+
+Writing an explicit value into a generated column is rejected:
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "insert into t_gencol (id,qty,price,amount) values (11,1,1,1);"
+ERROR:  cannot insert a non-DEFAULT value into column "amount"
+DETAIL:  Column "amount" is a generated column.
+```
+
+Finally, change a base column and check whether the virtual value changes immediately:
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "
+update t_gencol set price = 100 where id = 20001;
+select id, qty, price, amount from t_gencol where id = 20001;"
+  id   | qty | price | amount
+-------+-----+-------+--------
+ 20001 |  10 |   100 |   1000
+(1 row)
+```
+
+`amount` changes from 200 to 1000, confirming immediate recalculation.
+
+The results are the same through port 1521. The only visible difference is that Oracle mode displays the fully qualified type name `pg_catalog.int4`:
+
+```bash
+$ psql -h 127.0.0.1 -p 1521 -d t_pg18 -c "\d t_gencol_nn"
+                           Table "public.t_gencol_nn"
+ Column |      Type       | Collation | Nullable |            Default
+--------+-----------------+-----------+----------+-------------------------------
+ id     | pg_catalog.int4 |           |          |
+ v      | pg_catalog.int4 |           | not null | generated always as (id * 10)
+```
+
+## 4. RETURNING OLD/NEW: Retrieve Before and After Values
+
+PG18 adds `OLD` / `NEW` pseudo-row references to `RETURNING`. One DML statement can return values before and after modification, without a separate query-update-query sequence. Create the tables first; all `RETURNING` examples in this section use them:
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "
+create table t_ret (id int primary key, val text, note text);
+insert into t_ret values (1, 'old-one', 'n1'), (2, 'old-two', 'n2');"
+CREATE TABLE
+INSERT 0 2
+```
+
+Retrieve `old.*` and `new.*` together in UPDATE:
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "
+update t_ret set val='new-two' where id=2
+returning old.id as old_id, old.val as old_val, new.val as new_val;"
+ old_id | old_val | new_val
+--------+---------+---------
+      2 | old-two | new-two
+(1 row)
+```
+
+DELETE retrieves `old.*`; INSERT retrieves `new.*`. In INSERT, `old.*` is NULL; in DELETE, `new.*` is NULL:
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "delete from t_ret where id = 2 returning old.id, old.val, old.note;"
+ id |   val   | note
+----+---------+------
+  2 | new-two | n2
+(1 row)
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "insert into t_ret values (2, 'old-two', 'n2') returning old.id, new.id;"
+ id | id
+----+----
+    |  2
+(1 row)
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "delete from t_ret where id = 2 returning new.val;"
+ val
+-----
+
+(1 row)
+```
+
+For MERGE, `merge_action()` exposes whether the row matched an update or required an insert:
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "
+create table t_ret_target (id int primary key, val text);
+create table t_ret_src (id int primary key, val text);
+insert into t_ret_target values (1, 'one'), (3, 'three');
+insert into t_ret_src values (1, 'hit'), (2, 'miss');"
+CREATE TABLE
+CREATE TABLE
+INSERT 0 2
+INSERT 0 2
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "
+merge into t_ret_target t using t_ret_src s on t.id = s.id
+when matched then update set val = s.val
+when not matched then insert (id, val) values (s.id, s.val)
+returning merge_action(), old.val as old_val, new.val as new_val, new.id as id;"
+ merge_action | old_val | new_val | id
+--------------+---------+---------+----
+ UPDATE       | one     | hit     |  1
+ INSERT       |         | miss    |  2
+(2 rows)
+```
+
+`id=1` matches and is updated; `id=2` does not match and is inserted. Each result row includes the old value, new value, action and target primary key.
+
+### 4.1 Two Wrong Turns with Aliases
+
+A table deliberately containing columns named `old` and `new` makes the ambiguity clear: bare `RETURNING old, new` returns those columns rather than the OLD/NEW pseudo-rows.
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "
+create table t_ret2 (a int, old int, new int);
+insert into t_ret2 values (10, 20, 30);
+update t_ret2 set new = new + 100 where a = 10 returning old, new;"
+ old | new
+-----+-----
+  20 | 130
+(1 row)
+```
+
+To reference the pseudo-rows unambiguously, rename them. I first tried a `FROM ... AS` form:
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "
+create table old (a int, b int);
+insert into old values (10, 20);
+update old set b = 200 where a = 10 returning old_rows.a, new_rows.b FROM old AS old_rows;"
+ERROR:  syntax error at or near "FROM"
+LINE 1: ...200 WHERE a = 10 RETURNING old_rows.a, new_rows.b FROM old A...
+                                                             ^
+```
+
+UPDATE's `FROM` belongs before `WHERE`; placing it after `RETURNING` is a syntax error. I then tried `RETURNING WITH OLD AS o` without parentheses, which also failed:
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "update old set b = 300 where a = 10 returning with OLD AS o, NEW AS n o.b as before_update, n.b as after_update;"
+ERROR:  syntax error at or near "OLD"
+LINE 1: ...PDATE old SET b = 300 WHERE a = 10 RETURNING WITH OLD AS o, ...
+                                                             ^
+```
+
+The grammar in Section 6.2 explains why: parentheses are part of `returning_with_clause`, and `returning_options` is a parenthesized list. Renaming OLD/NEW must be written inside that list. The correct production works immediately:
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "update old set b = b + 100 where a = 10 returning with (OLD AS o, NEW AS n) o.b as before_update, n.b as after_update;"
+ before_update | after_update
+---------------+--------------
+            20 |          120
+(1 row)
+```
+
+The same applies to DELETE:
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "delete from old where a = 10 returning with (OLD AS o) o.b as deleted_value;"
+ deleted_value
+---------------
+           120
+(1 row)
+```
+
+## 5. WITHOUT OVERLAPS and PERIOD: Temporal Uniqueness and Foreign Keys
+
+PG18 brings temporal uniqueness constraints and temporal foreign keys into the core. IvorySQL 5.6 supports them in PG mode only.
+
+The first trap is that `WITHOUT OVERLAPS` uses a GiST exclusion index. The constraint needs at least two columns, and the non-range column, `int` in this example, has no default GiST operator class. Creating the table without `btree_gist` fails:
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "
+create table t_emp_hist (empno int, deptno int, valid_at daterange,
+  primary key (empno, valid_at WITHOUT OVERLAPS));"
+ERROR:  data type integer has no default operator class for access method "gist"
+HINT:  You must specify an operator class for the index or define a default operator class for the data type.
+```
+
+Installing `btree_gist` makes it work by adding GiST operator classes for scalar types such as `int`:
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "create extension btree_gist;"
+CREATE EXTENSION
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "
+create table t_emp_hist (empno int, deptno int, valid_at daterange,
+  primary key (empno, valid_at WITHOUT OVERLAPS));"
+CREATE TABLE
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "\d t_emp_hist"
+               Table "public.t_emp_hist"
+  Column  |   Type    | Collation | Nullable | Default
+----------+-----------+-----------+----------+---------
+ empno    | integer   |           | not null |
+ deptno   | integer   |           |          |
+ valid_at | daterange |           | not null |
+Indexes:
+    "t_emp_hist_pkey" PRIMARY KEY (empno, valid_at WITHOUT OVERLAPS)
+Referenced by:
+    TABLE "t_emp_slot" CONSTRAINT "t_emp_slot_empno_slot_at_fkey" FOREIGN KEY (empno, PERIOD slot_at) REFERENCES t_emp_hist(empno, PERIOD valid_at)
+```
+
+Notice that both `empno` and `valid_at` now show `not null`. Columns participating in this overlap check receive `NOT NULL` constraints automatically at table creation; the catalog inspection later in this section shows them.
+
+Insert two non-overlapping intervals. An overlapping interval is rejected:
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "
+insert into t_emp_hist values
+  (1, 10, '[2026-01-01, 2026-03-01)'),
+  (1, 20, '[2026-03-01, 2026-06-01)');
+select * from t_emp_hist order by valid_at;"
+ empno | deptno |        valid_at
+-------+--------+-------------------------
+     1 |     10 | [2026-01-01,2026-03-01)
+     1 |     20 | [2026-03-01,2026-06-01)
+(2 rows)
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "
+insert into t_emp_hist values (1, 30, '[2026-02-01, 2026-04-01)');"
+ERROR:  conflicting key value violates exclusion constraint "t_emp_hist_pkey"
+DETAIL:  Key (empno, valid_at)=(1, [2026-02-01,2026-04-01)) conflicts with existing key (empno, valid_at)=(1, [2026-01-01,2026-03-01)).
+```
+
+Adjacent intervals are allowed with inclusive lower and exclusive upper bounds: `[..,2026-03-01)` can meet `[2026-03-01,..)`. Inserting `[2026-06-01, 2026-09-01)` succeeds:
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "insert into t_emp_hist values (1, 30, '[2026-06-01, 2026-09-01)');"
+INSERT 0 1
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "select * from t_emp_hist order by valid_at;"
+ empno | deptno |        valid_at
+-------+--------+-------------------------
+     1 |     10 | [2026-01-01,2026-03-01)
+     1 |     20 | [2026-03-01,2026-06-01)
+     1 |     30 | [2026-06-01,2026-09-01)
+(3 rows)
+```
+
+`UNIQUE (... WITHOUT OVERLAPS)` also prevents overlap:
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "
+create table t_uniq (room int, during daterange, unique (room, during WITHOUT OVERLAPS));
+insert into t_uniq values (101, '[2026-01-01, 2026-01-10)');
+select * from t_uniq;"
+CREATE TABLE
+INSERT 0 1
+ room |         during
+------+-------------------------
+  101 | [2026-01-01,2026-01-10)
+(1 row)
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "insert into t_uniq values (101, '[2026-01-05, 2026-01-20)');"
+ERROR:  conflicting key value violates exclusion constraint "t_uniq_room_during_key"
+DETAIL:  Key (room, during)=(101, [2026-01-05,2026-01-20)) conflicts with existing key (room, during)=(101, [2026-01-01,2026-01-10)).
+```
+
+For a `PERIOD` foreign key, the child's interval must be covered by the parent's interval. Create the child table and insert a valid row:
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "
+create table t_emp_slot (empno int, slot_at daterange,
+  foreign key (empno, PERIOD slot_at) references t_emp_hist(empno, PERIOD valid_at));"
+CREATE TABLE
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "\d t_emp_slot"
+              Table "public.t_emp_slot"
+ Column  |   Type    | Collation | Nullable | Default
+---------+-----------+-----------+----------+---------
+ empno   | integer   |           |          |
+ slot_at | daterange |           |          |
+Foreign-key constraints:
+    "t_emp_slot_empno_slot_at_fkey" FOREIGN KEY (empno, PERIOD slot_at) REFERENCES t_emp_hist(empno, PERIOD valid_at)
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "insert into t_emp_slot values (1, '[2026-01-05, 2026-02-01)');"
+INSERT 0 1
+```
+
+`[2026-01-05, 2026-02-01)` lies within the parent's `[2026-01-01, 2026-03-01)`, so it is valid. Now insert an interval outside that coverage:
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "
+insert into t_emp_slot values (1, '[2025-12-01, 2026-01-05)');"
+ERROR:  insert or update on table "t_emp_slot" violates foreign key constraint "t_emp_slot_empno_slot_at_fkey"
+DETAIL:  Key (empno, slot_at)=(1, [2025-12-01,2026-01-05)) is not present in table "t_emp_hist".
+```
+
+The history from December 2025 to January 5, 2026 is absent from `t_emp_hist`. The issue is missing history rather than merely mismatched intervals, and the error message says so.
+
+### 5.1 Catalog Representation of the Constraints
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "
+select conname,
+       case contype when 'p' then 'PRIMARY KEY' when 'u' then 'UNIQUE' when 'f' then 'FOREIGN KEY' else '' end as kind,
+       pg_get_constraintdef(oid) as def
+from pg_constraint where conrelid in ('t_emp_hist'::regclass,'t_uniq'::regclass,'t_emp_slot'::regclass) order by 1;"
+            conname            |    kind     |                                        def
+-------------------------------+-------------+-----------------------------------------------------------------------------------
+ t_emp_hist_empno_not_null     |             | NOT NULL empno
+ t_emp_hist_pkey               | PRIMARY KEY | PRIMARY KEY (empno, valid_at WITHOUT OVERLAPS)
+ t_emp_hist_valid_at_not_null  |             | NOT NULL valid_at
+ t_emp_slot_empno_slot_at_fkey | FOREIGN KEY | FOREIGN KEY (empno, PERIOD slot_at) REFERENCES t_emp_hist(empno, PERIOD valid_at)
+ t_uniq_room_during_key        | UNIQUE      | UNIQUE (room, during WITHOUT OVERLAPS)
+(5 rows)
+```
+
+The two `NOT NULL` constraints were added automatically for `WITHOUT OVERLAPS`. The exclusion index is also visible in `pg_index`:
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "
+select indexrelid::regclass as index_name, indisexclusion, pg_get_indexdef(indexrelid) as def
+from pg_index where indrelid in ('t_emp_hist'::regclass,'t_uniq'::regclass);"
+       index_name       | indisexclusion |                                          def
+------------------------+----------------+---------------------------------------------------------------------------------------
+ t_emp_hist_pkey        | t              | CREATE UNIQUE INDEX t_emp_hist_pkey ON public.t_emp_hist USING gist (empno, valid_at)
+ t_uniq_room_during_key | t              | CREATE UNIQUE INDEX t_uniq_room_during_key ON public.t_uniq USING gist (room, during)
+(2 rows)
+```
+
+`indisexclusion` is `t`: the underlying structure is a GiST exclusion index, explaining the requirement for `btree_gist`.
+
+### 5.2 Not Available in Oracle Mode
+
+Both features are specific to PG mode. On port 1521, they produce syntax errors. First, `WITHOUT OVERLAPS`:
+
+```bash
+$ psql -h 127.0.0.1 -p 1521 -d t_pg18 -c "
+create table t_emp_hist (empno int, deptno int, valid_at daterange,
+  primary key (empno, valid_at WITHOUT OVERLAPS));"
+ERROR:  syntax error at or near "WITHOUT"
+LINE 3:   primary key (empno, valid_at WITHOUT OVERLAPS));
+                                       ^
+```
+
+Then the `PERIOD` foreign key:
+
+```bash
+$ psql -h 127.0.0.1 -p 1521 -d t_pg18 -c "
+create table t_emp_slot (empno int, slot_at daterange,
+  foreign key (empno, PERIOD slot_at) references t_emp_hist(empno, PERIOD valid_at));"
+ERROR:  syntax error at or near "slot_at"
+LINE 3:   foreign key (empno, PERIOD slot_at) references t_emp_hist(...
+                                     ^
+```
+
+In Oracle mode, preventing temporal overlaps requires application checks or triggers.
+
+## 6. Pitfalls and Grammar Evidence
+
+### 6.1 Three Practical Traps
+
+- **Trap 1: `WITHOUT OVERLAPS` needs `btree_gist`.** It uses a GiST exclusion index over at least two columns. The scalar column, `int` here, has no default GiST operator class without the extension, resulting in `no default operator class for access method "gist"`. Core PostgreSQL already provides GiST support for the `daterange` range column; `btree_gist` adds support for scalar types such as `int`. Installing it resolves the error.
+- **Trap 2: Oracle mode does not accept these PG18 temporal constructs.** `WITHOUT OVERLAPS` and `PERIOD` foreign keys both fail on port 1521. Use them as PG-mode features.
+- **Trap 3: `uuidv7(INTERVAL ...)` fails to parse in Oracle mode.** Both overloads are present in `pg_proc` through either port. The difference is in parsing; the author reports a fix in progress and expects support in the next release. Until upgrading, use the no-argument form and a separate business timestamp field.
+
+### 6.2 Grammar Evidence for RETURNING Aliases
+
+Here is the source of `RETURNING WITH (...)`. **The RPM binary package does not include `gram.y`.** I removed the source tree after the first verification, and github.com was unreachable during the second attempt. The following is the actual record from the first inspection of `/tmp/ivsrc2/IvorySQL-IvorySQL_5.6`. Repeating it requires an IvorySQL source tree. For the executed behavior, use the two failing psql statements and the successful statement in Section 4.1 as the evidence.
+
+I first located line 12396 with `grep -n '^returning_with_clause:'`, then printed its surrounding context:
+
+```bash
+$ L=$(grep -n '^returning_with_clause:' src/backend/parser/gram.y | cut -d: -f1)
+$ echo "起始行=$L"
+起始行=12396
+$ sed -n "${L},$((L+28))p" src/backend/parser/gram.y
+returning_with_clause:
+			WITH '(' returning_options ')'		{ $$ = $3; }
+			| /* EMPTY */						{ $$ = NIL; }
+		;
+
+returning_options:
+			returning_option							{ $$ = list_make1($1); }
+			| returning_options ',' returning_option	{ $$ = lappend($1, $3); }
+		;
+
+returning_option:
+			returning_option_kind AS ColId
+				{
+					ReturningOption *n = makeNode(ReturningOption);
+
+					n->option = $1;
+					n->value = $3;
+					n->location = @1;
+					$$ = n;
+				}
+		;
+
+returning_option_kind:
+			OLD			{ $$ = RETURNING_OPTION_OLD; }
+			| NEW		{ $$ = RETURNING_OPTION_NEW; }
+		;
+```
+
+The production is `WITH '(' returning_options ')'`. Parentheses are part of the syntax. The options list contains entries such as `OLD AS alias`. This explains why the unparenthesized second attempt in Section 4.1 failed and the third succeeded.
+
+## 7. Final-State Verification
+
+Three queries verify the final state of these tests:
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -Atc "select uuidv7();"
+01a0ca06-b15c-7f00-9553-72d6d0607088
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -Atc "select attgenerated from pg_attribute where attrelid='t_gencol'::regclass and attname='amount';"
+v
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -Atc "select pg_get_constraintdef(oid) from pg_constraint where conname='t_emp_hist_pkey';"
+PRIMARY KEY (empno, valid_at WITHOUT OVERLAPS)
+```
+
+`attgenerated` is `v`, confirming the virtual column; the primary-key definition includes `WITHOUT OVERLAPS`, confirming the temporal constraint.
+
+## Conclusion
+
+These SQL feature families work on IvorySQL 5.6 as tested through both ports: PG18's `uuidv7`, virtual generated columns, `RETURNING OLD/NEW` and temporal constraints, plus the UUID extraction functions introduced in PG17. Two boundaries matter: **temporal constraints are PG-mode only**, and **Oracle-mode `uuidv7(INTERVAL ...)` support was still expected in the next release at the time of testing**.
