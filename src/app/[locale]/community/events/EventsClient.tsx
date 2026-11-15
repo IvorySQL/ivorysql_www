@@ -7,7 +7,12 @@ import Image from "next/image";
 import { useLocale, useTranslations } from "next-intl";
 
 import { Link } from "@/i18n/navigation";
-import { getEventStatus } from "@/lib/event-status";
+import {
+  getEventGroups,
+  getEventStatus,
+  type EventStatus,
+} from "@/lib/event-status";
+import { getEventTypeLabel } from "@/lib/event-types";
 import { cn, parseUTCDate } from "@/lib/utils";
 
 type IvoryEvent = {
@@ -27,13 +32,14 @@ type IvoryEvent = {
 
 interface EventsClientProps {
   allEvents: IvoryEvent[];
+  initialNow: number;
 }
 
-export function EventsClient({ allEvents }: EventsClientProps) {
+export function EventsClient({ allEvents, initialNow }: EventsClientProps) {
   const locale = useLocale();
   const t = useTranslations("EventsUI");
   const dateLocale = locale === "zh" ? "zh-CN" : "en-US";
-  const [now, setNow] = useState<Date | null>(null);
+  const [now, setNow] = useState(() => new Date(initialNow));
   useEffect(() => {
     setNow(new Date());
     const timer = setInterval(() => setNow(new Date()), 30_000);
@@ -41,6 +47,14 @@ export function EventsClient({ allEvents }: EventsClientProps) {
   }, []);
   const [activeCategory, setActiveCategory] = useState<string>("all");
   const [searchTerm, setSearchTerm] = useState("");
+  const [activeStatus, setActiveStatus] = useState<EventStatus | "all">("all");
+  const statuses = ["all", "ongoing", "upcoming", "ended"] as const;
+  const statusLabels = {
+    ongoing: t("statusOngoing"),
+    upcoming: t("statusUpcoming"),
+    ended: t("statusEnded"),
+    all: t("all"),
+  };
 
   const categories = useMemo(() => {
     const cats = new Set(allEvents.map((e) => e.eventType));
@@ -55,7 +69,7 @@ export function EventsClient({ allEvents }: EventsClientProps) {
     return counts;
   }, [allEvents]);
 
-  const filteredEvents = useMemo(() => {
+  const matchingEvents = useMemo(() => {
     let events = allEvents;
 
     if (activeCategory !== "all") {
@@ -74,6 +88,13 @@ export function EventsClient({ allEvents }: EventsClientProps) {
 
     return events;
   }, [allEvents, activeCategory, searchTerm]);
+
+  const matchingGroups = useMemo(
+    () => getEventGroups(matchingEvents, now),
+    [matchingEvents, now],
+  );
+  const filteredEvents =
+    activeStatus === "all" ? matchingEvents : matchingGroups[activeStatus];
 
   // Group events by date
   const groupedEvents = useMemo(() => {
@@ -98,15 +119,120 @@ export function EventsClient({ allEvents }: EventsClientProps) {
   }, [filteredEvents, dateLocale]);
 
   return (
-    <div className="flex flex-col gap-8 lg:flex-row">
-      {/* Sticky Filters Sidebar */}
-      <aside className="lg:sticky lg:top-20 lg:w-[280px] lg:shrink-0">
-        <div className="space-y-6">
-          {/* Search */}
-          <div>
-            <div className="relative w-full">
+    <div>
+      <div className="border-border mb-6 flex flex-col gap-3 border-b pb-5 sm:flex-row sm:items-center">
+        <p className="text-muted-foreground shrink-0 text-xs font-medium">
+          {t("eventStatus")}
+        </p>
+        <div
+          role="group"
+          aria-label={t("eventStatus")}
+          className="flex flex-wrap gap-2"
+        >
+          {statuses.map((status) => (
+            <button
+              key={status}
+              type="button"
+              aria-pressed={activeStatus === status}
+              onClick={() => setActiveStatus(status)}
+              className={cn(
+                "rounded-full px-4 py-2 text-sm font-medium transition-colors",
+                activeStatus === status
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground",
+              )}
+            >
+              {statusLabels[status]}{" "}
+              <span className="ml-1 opacity-70">
+                (
+                {status === "all"
+                  ? matchingEvents.length
+                  : matchingGroups[status].length}
+                )
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-8 lg:flex-row">
+        {/* Sticky Filters Sidebar */}
+        <aside className="lg:sticky lg:top-20 lg:w-[280px] lg:shrink-0">
+          <div className="space-y-6">
+            {/* Search */}
+            <div>
+              <div className="relative w-full">
+                <svg
+                  className="text-muted-foreground absolute top-1/2 left-3 size-4 -translate-y-1/2"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0Z"
+                  />
+                </svg>
+                <input
+                  type="search"
+                  placeholder={t("searchPlaceholder")}
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="border-border bg-background text-foreground placeholder:text-muted-foreground focus:ring-ring w-full rounded-lg border py-2 pr-4 pl-10 text-sm focus:ring-2 focus:outline-none"
+                />
+              </div>
+            </div>
+
+            {/* Category Badges */}
+            <div>
+              <p className="text-muted-foreground mb-3 text-xs font-medium tracking-wider uppercase">
+                {t("eventType")}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {categories.map((cat) => (
+                  <button
+                    key={cat}
+                    type="button"
+                    aria-pressed={cat === activeCategory}
+                    onClick={() => setActiveCategory(cat)}
+                    className={cn(
+                      "rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors",
+                      cat === activeCategory
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground",
+                    )}
+                  >
+                    {cat === "all" ? t("all") : getEventTypeLabel(cat, locale)}{" "}
+                    <span className="opacity-60">
+                      ({categoryCounts[cat] || 0})
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Count */}
+            <div
+              className="text-muted-foreground text-sm"
+              role="status"
+              aria-live="polite"
+            >
+              {t("showingCount", {
+                shown: filteredEvents.length,
+                total: allEvents.length,
+              })}
+            </div>
+          </div>
+        </aside>
+
+        {/* Events Timeline */}
+        <div className="min-w-0 flex-1">
+          {filteredEvents.length === 0 ? (
+            <div className="py-16 text-center">
               <svg
-                className="text-muted-foreground absolute top-1/2 left-3 size-4 -translate-y-1/2"
+                className="text-muted-foreground mx-auto mb-4 size-12 opacity-40"
                 fill="none"
                 viewBox="0 0 24 24"
                 stroke="currentColor"
@@ -114,110 +240,50 @@ export function EventsClient({ allEvents }: EventsClientProps) {
                 <path
                   strokeLinecap="round"
                   strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0Z"
+                  strokeWidth={1.5}
+                  d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5"
                 />
               </svg>
-              <input
-                type="search"
-                placeholder={t("searchPlaceholder")}
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="border-border bg-background text-foreground placeholder:text-muted-foreground focus:ring-ring w-full rounded-lg border py-2 pr-4 pl-10 text-sm focus:ring-2 focus:outline-none"
-              />
+              <p className="text-muted-foreground text-lg">{t("noResults")}</p>
             </div>
-          </div>
+          ) : (
+            <div className="relative space-y-8">
+              {/* Vertical timeline line */}
+              <div className="before:bg-border absolute top-0 bottom-0 left-[7px] w-px before:absolute before:inset-0 before:w-full" />
 
-          {/* Category Badges */}
-          <div>
-            <p className="text-muted-foreground mb-3 text-xs font-medium tracking-wider uppercase">
-              {t("eventType")}
-            </p>
-            <div className="flex flex-wrap gap-2">
-              {categories.map((cat) => (
-                <button
-                  key={cat}
-                  onClick={() => setActiveCategory(cat)}
-                  className={cn(
-                    "rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors",
-                    cat === activeCategory
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground",
-                  )}
-                >
-                  {cat === "all" ? t("all") : cat}{" "}
-                  <span className="opacity-60">
-                    ({categoryCounts[cat] || 0})
-                  </span>
-                </button>
-              ))}
+              {Array.from(groupedEvents.entries()).map(
+                ([dateGroup, events]) => (
+                  <div key={dateGroup} className="relative">
+                    {/* Date header with timeline dot */}
+                    <div className="mb-4 flex items-center gap-3">
+                      <div className="bg-primary ring-background relative z-10 size-3.5 shrink-0 rounded-full ring-4" />
+                      <h3 className="text-foreground text-sm font-semibold">
+                        {dateGroup}
+                      </h3>
+                    </div>
+
+                    {/* Event cards */}
+                    <div className="ml-[27px] space-y-3">
+                      {events.map((event) => (
+                        <EventCard
+                          key={event.slug}
+                          event={event}
+                          now={now}
+                          dateLocale={dateLocale}
+                          statusLabels={{
+                            ended: t("statusEnded"),
+                            upcoming: t("statusUpcoming"),
+                            ongoing: t("statusOngoing"),
+                          }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ),
+              )}
             </div>
-          </div>
-
-          {/* Count */}
-          <div className="text-muted-foreground text-sm">
-            {t("showingCount", {
-              shown: filteredEvents.length,
-              total: allEvents.length,
-            })}
-          </div>
+          )}
         </div>
-      </aside>
-
-      {/* Events Timeline */}
-      <div className="min-w-0 flex-1">
-        {filteredEvents.length === 0 ? (
-          <div className="py-16 text-center">
-            <svg
-              className="text-muted-foreground mx-auto mb-4 size-12 opacity-40"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={1.5}
-                d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5"
-              />
-            </svg>
-            <p className="text-muted-foreground text-lg">{t("noResults")}</p>
-          </div>
-        ) : (
-          <div className="relative space-y-8">
-            {/* Vertical timeline line */}
-            <div className="before:bg-border absolute top-0 bottom-0 left-[7px] w-px before:absolute before:inset-0 before:w-full" />
-
-            {Array.from(groupedEvents.entries()).map(([dateGroup, events]) => (
-              <div key={dateGroup} className="relative">
-                {/* Date header with timeline dot */}
-                <div className="mb-4 flex items-center gap-3">
-                  <div className="bg-primary ring-background relative z-10 size-3.5 shrink-0 rounded-full ring-4" />
-                  <h3 className="text-foreground text-sm font-semibold">
-                    {dateGroup}
-                  </h3>
-                </div>
-
-                {/* Event cards */}
-                <div className="ml-[27px] space-y-3">
-                  {events.map((event) => (
-                    <EventCard
-                      key={event.slug}
-                      event={event}
-                      now={now}
-                      dateLocale={dateLocale}
-                      statusLabels={{
-                        ended: t("statusEnded"),
-                        upcoming: t("statusUpcoming"),
-                        ongoing: t("statusOngoing"),
-                      }}
-                    />
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
       </div>
     </div>
   );
@@ -230,14 +296,15 @@ function EventCard({
   statusLabels,
 }: {
   event: IvoryEvent;
-  now: Date | null;
+  now: Date;
   dateLocale: string;
   statusLabels: { ended: string; upcoming: string; ongoing: string };
 }) {
+  const locale = useLocale();
   const startDate = parseUTCDate(event.date);
   const endDate = event.endDate ? parseUTCDate(event.endDate) : startDate;
 
-  const state = now ? getEventStatus(event, now) : null;
+  const state = getEventStatus(event, now);
   let status: { label: string; color: string; bg: string } = {
     label: statusLabels.ended,
     color: "text-muted-foreground",
@@ -288,7 +355,13 @@ function EventCard({
               alt={event.title}
               fill
               sizes="144px"
-              className="object-cover object-left-top transition-transform duration-500 group-hover:scale-[1.03]"
+              className={cn(
+                "object-left-top transition-transform duration-500 group-hover:scale-[1.03]",
+                event.eventType === "Competition" ||
+                  event.eventType === "Conference"
+                  ? "object-contain"
+                  : "object-cover",
+              )}
             />
           ) : (
             <div className="text-muted-foreground flex size-full items-center justify-center">
@@ -316,7 +389,7 @@ function EventCard({
             <h4 className="text-foreground line-clamp-1 text-base font-semibold group-hover:underline">
               {event.title}
             </h4>
-            {now ? (
+            {
               <span
                 className={cn(
                   "shrink-0 rounded-full px-2 py-0.5 text-xs font-medium",
@@ -326,7 +399,7 @@ function EventCard({
               >
                 {status.label}
               </span>
-            ) : null}
+            }
           </div>
 
           <p className="text-muted-foreground mt-1 line-clamp-1 text-sm">
@@ -398,7 +471,7 @@ function EventCard({
 
         {/* Event type badge */}
         <span className="text-muted-foreground border-border shrink-0 rounded-full border px-2.5 py-1 text-xs font-medium">
-          {event.eventType}
+          {getEventTypeLabel(event.eventType, locale)}
         </span>
       </div>
     </Link>

@@ -446,6 +446,7 @@
     "viewDetails": "View details"
   },
   "EventsUI": {
+    "eventStatus": "Event status",
     "backToEvents": "All Events",
     "previousEvent": "Previous event",
     "nextEvent": "Next event",
