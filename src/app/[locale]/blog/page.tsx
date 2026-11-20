@@ -6,6 +6,7 @@ import { getTranslations } from "next-intl/server";
 import { BlogClient } from "./BlogClient";
 
 import { Link } from "@/i18n/navigation";
+import { resolveAuthor } from "@/lib/authors";
 import { buildAlternates } from "@/lib/hreflang";
 import { getSortedPosts, type BlogPost } from "@/lib/posts";
 
@@ -56,7 +57,11 @@ export default async function BlogPage({
 
         {/* Featured Post */}
         {featuredPost && (
-          <FeaturedPost post={featuredPost} readArticle={t("readArticle")} />
+          <FeaturedPost
+            post={featuredPost}
+            locale={locale}
+            readArticle={t("readArticle")}
+          />
         )}
 
         {/* Blog Grid with Filters */}
@@ -70,9 +75,11 @@ export default async function BlogPage({
 
 function FeaturedPost({
   post,
+  locale,
   readArticle,
 }: {
   post: BlogPost;
+  locale: string;
   readArticle: string;
 }) {
   return (
@@ -128,7 +135,7 @@ function FeaturedPost({
 
         <div className="mt-4 flex items-center gap-2 text-sm">
           <span className="text-foreground font-medium">
-            {resolveAuthorName(post.author)}
+            {resolveAuthor(post.author, locale).author}
           </span>
         </div>
 
@@ -151,14 +158,4 @@ function FeaturedPost({
       </div>
     </Link>
   );
-}
-
-function resolveAuthorName(authorId: string): string {
-  const map: Record<string, string> = {
-    official: "IvorySQL Team",
-    Asif: "Asif Rehman",
-    "Yasir Hussain Shah": "Yasir Hussain Shah",
-    严少安: "Shawn Yan",
-  };
-  return map[authorId] || authorId;
 }

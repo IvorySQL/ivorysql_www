@@ -1,0 +1,287 @@
+---
+slug: "pg18-index-query-ivorysql-5-6"
+title: "PG18 索引与查询特性在 IvorySQL 5.6 上的实测"
+date: "2026-11-09"
+author: "山佳"
+category: "IvorySQL"
+image: "/images/blog/covers/pg18-index-query.webp"
+tags: ["PostgreSQL 18", "Index", "Query Optimization"]
+description: "以终端输出验证 B-tree skip scan、GIN 并行构建与 file_copy_method，记录实测证据和环境限制。"
+---
+
+> 作者简介：山佳，国产数据库技术爱好者，持有 KCA、KCP、KCM；Oracle 与 MySQL 从业者，持有 Oracle OCM、MySQL 8.0 OCP。致力于分享数据库和运维领域相关知识。
+
+**摘要：** 这一篇测 IvorySQL5.6(PG18) 在索引与查询侧的三组新能力：nbtree 的 skip scan、GIN 索引的并行构建、以及控制文件复制方式的 `file_copy_method`。skip scan 是本版最实用的索引优化——多列 B-tree 索引在前导列没有等值条件时也能用上，我用 `Index Searches` 计数抓到了它的工作痕迹（一次 5 搜、对照场景 1 搜）。并行 GIN 构建在 150 万行 jsonb 表上抓到了 2 个 parallel worker。而 `file_copy_method` 只接受 `copy`，`clone` 在本环境直接报非法值。
+
+阅读约定：代码块中 `$` 前缀为普通用户执行，其余为终端实际输出。
+
+## 一、环境与软件
+
+| 项目 | 取值 |
+| --- | --- |
+| 主机 | shanjiatst4.shanjia.com（192.168.40.153） |
+| OS / 操作系统内核 | Rocky Linux 8.10 / 4.18.0-553.el8_10.x86_64 |
+| CPU / 内存 / 磁盘 | 4 vCPU / 7.5 GiB / NVMe 60 G xfs（/） |
+| SELinux / firewalld | enforcing / running |
+
+| 软件 | 说明 |
+| --- | --- |
+| ivorysql5-5.6-74c405c.x86_64 | 安装前缀 /usr/ivory-5 |
+| 数据库内核版本 | PostgreSQL 18.6 |
+| 索引方法（pg_am） | brin / btree / gin / gist / hash / heap / spgist |
+| 测试库 | t_pg18 |
+
+本文所有操作都在测试库 `t_pg18` 里进行，先建库（重跑时先删旧库，保证幂等）：
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d postgres -c "drop database if exists t_pg18;" -c "create database t_pg18;"
+DROP DATABASE
+CREATE DATABASE
+```
+
+先探一遍相关参数与索引方法，确认手上有什么牌。
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -Atc "select version();"
+PostgreSQL 18.6 (IvorySQL 5.6) on x86_64-pc-linux-gnu, compiled by gcc (GCC) 10.2.0, 64-bit
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -Atc "
+select name, setting from pg_settings
+where name in ('file_copy_method','max_parallel_maintenance_workers','max_worker_processes');"
+file_copy_method|copy
+max_parallel_maintenance_workers|2
+max_worker_processes|8
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -Atc "show enable_indexskipscan;"
+ERROR:  unrecognized configuration parameter "enable_indexskipscan"
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -Atc "select amname from pg_am order by 1;"
+brin
+btree
+gin
+gist
+hash
+heap
+spgist
+```
+
+三点先说清楚。一，`enable_indexskipscan` 这个开关在当前版本**不存在**——skip scan 是默认开启、没有 GUC 可关的。二，`file_copy_method` 存在且默认 `copy`。三，两个 worker 参数要分开读：`max_worker_processes` 是 `8`，管的是整个实例的后台 worker 总配额，并行 worker、autovacuum worker 等所有后台进程都从这 8 个里出；`max_parallel_maintenance_workers` 是 `2`，只管单个维护操作（比如并行 `CREATE INDEX`）能启动几个并行 worker。所以「并行构建最多 2 个 worker」说的是分闸，跟总闸 `8` 不矛盾——一次构建最多占 2 个，离实例总配额还远。§3 实测起的 worker 数，就以这个 `2` 为上限。
+
+## 二、nbtree skip scan
+
+skip scan 解决的是一个老问题：多列 B-tree 索引 `(a, b)`，一旦查询里没有前导列 `a` 的等值条件，PG 历来只能放弃这个索引。PG18 允许在这种情况下「跳过」前导列的不同取值、逐个探测后一列。
+
+造一张前导列基数极低的表：`a` 只有 3 个取值，`b` 高基数，灌 30 万行，建 `(a, b)` 索引。
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "
+drop table if exists t_skip;
+create table t_skip (a int, b int, payload text);
+insert into t_skip select (g % 3) + 1, g, 'row-' || g from generate_series(1,300000) g;
+create index idx_t_skip_ab on t_skip (a, b);
+analyze t_skip;"
+INSERT 0 300000
+CREATE INDEX
+ANALYZE
+```
+
+关键查询：只按第二列 `b` 过滤，完全不给前导列 `a` 任何条件。
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "explain (analyze, buffers) select payload from t_skip where b = 200000;"
+                                                         QUERY PLAN
+-----------------------------------------------------------------------------------------------------------------------------
+ Index Scan using idx_t_skip_ab on t_skip  (cost=0.42..21.73 rows=1 width=10) (actual time=37.625..37.637 rows=1.00 loops=1)
+   Index Cond: (b = 200000)
+   Index Searches: 5
+   Buffers: shared hit=13 read=9
+ Planning:
+   Buffers: shared hit=69 read=1
+ Planning Time: 0.334 ms
+ Execution Time: 37.667 ms
+(8 rows)
+```
+
+判定点就在 `Index Searches: 5` 这一行——它说明这次索引扫描对索引做了 5 次定位搜索。这正是 skip scan 的特征：因为 `a` 有 3 个不同取值，引擎为每个取值各探一次后一列，加上两个边界，合计 5 次。结果是 `Index Scan using idx_t_skip_ab`，而不是全表扫。核对结果是否正确：
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "select payload from t_skip where b = 200000;"
+  payload
+------------
+ row-200000
+```
+
+说明：上面是建索引后的第一次执行（索引页尚未进缓存，`read=9`），耗时 37.7 ms；紧接着重跑同一查询，耗时回落到 0.1 ms 量级（`Buffers: shared hit=22`），`Index Searches: 5` 保持不变。这个计数才是判定 skip scan 的证据，耗时只反映缓存冷热。
+
+再跑一个对照组：这次给前导列 `a` 也带上等值条件。
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "explain (analyze, buffers) select payload from t_skip where a = 1 and b = 200000;"
+                                                        QUERY PLAN
+--------------------------------------------------------------------------------------------------------------------------
+ Index Scan using idx_t_skip_ab on t_skip  (cost=0.42..8.44 rows=1 width=10) (actual time=0.004..0.004 rows=0.00 loops=1)
+   Index Cond: ((a = 1) AND (b = 200000))
+   Index Searches: 1
+   Buffers: shared hit=3
+ Planning Time: 0.040 ms
+ Execution Time: 0.009 ms
+(6 rows)
+```
+
+注意对照组返回 0 行是正常的：`a = (g % 3) + 1`，`b=200000` 那一行的 `a` 等于 3 而不是 1，加个不匹配的前导列等值条件自然查不到。这里要看的是 `Index Searches: 1`——带上前导列等值条件后，引擎一次定位就够，不再需要逐值探测。
+
+再补一个范围条件的对照，`b between 200000 and 200010` 同样触发 skip scan（`Index Searches: 5`，实际 11 行）：
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "explain (analyze, buffers) select payload from t_skip where b between 200000 and 200010;"
+                                                         QUERY PLAN
+-----------------------------------------------------------------------------------------------------------------------------
+ Index Scan using idx_t_skip_ab on t_skip  (cost=0.42..55.57 rows=10 width=10) (actual time=0.006..0.011 rows=11.00 loops=1)
+   Index Cond: ((b >= 200000) AND (b <= 200010))
+   Index Searches: 5
+   Buffers: shared hit=16
+ Planning:
+   Buffers: shared hit=10
+ Planning Time: 0.051 ms
+ Execution Time: 0.016 ms
+(8 rows)
+```
+
+| 查询条件 | 计划 | Index Searches | 执行时间 |
+| --- | --- | --- | --- |
+| `b = 200000` | Index Scan（skip scan） | 5 | 37.7 ms（冷）/ 0.1 ms（热） |
+| `a = 1 AND b = 200000` | Index Scan（正常定位） | 1 | 0.009 ms |
+| `b between 200000 and 200010` | Index Scan（skip scan） | 5 | 0.016 ms |
+
+三者都是索引扫描，区别在搜索次数：带前导列等值时一次定位命中，不带时靠 skip scan 逐值探测（5 次）。把搜索次数当成一个可观测的指标，就能确认 skip scan 到底有没有被用上。
+
+## 三、GIN 索引的并行构建
+
+PG18 允许 `CREATE INDEX ... USING gin` 并行构建。造一张 150 万行的 jsonb 表，构建时把 `maintenance_work_mem` 提到 2 GB。
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "
+drop table if exists t_gin;
+create table t_gin (id int, doc jsonb);
+insert into t_gin
+select g, jsonb_build_object('k1',g,'k2',g%1000,'tags',jsonb_build_array(g%7,g%11))
+from generate_series(1,1500000) g;"
+INSERT 0 1500000
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -Atc "show max_parallel_maintenance_workers;"
+2
+```
+
+先在后台发起构建，同时采样进度视图 `pg_stat_progress_create_index`，能看到 GIN 构建的两个阶段。（这次构建的并行 worker 上限就是上面那个 `2`——单次维护操作的分闸；实例总闸 `max_worker_processes=8` 不是这里的约束。）
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "set maintenance_work_mem='2GB'; create index idx_t_gin on t_gin using gin (doc);" &
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -x -c "
+select command, phase, blocks_total, blocks_done, tuples_total, tuples_done
+from pg_stat_progress_create_index;"
+-[ RECORD 1 ]+-------------------------------
+command      | CREATE INDEX
+phase        | building index: scanning table
+blocks_total | 22719
+blocks_done  | 10106
+tuples_total | 0
+tuples_done  | 0
+```
+
+过一会儿再看，阶段从「扫描表」切到「归并元组」：
+
+```bash
+-[ RECORD 1 ]+-------------------------------
+command      | CREATE INDEX
+phase        | building index: merging tuples
+blocks_total | 0
+blocks_done  | 0
+tuples_total | 1502010
+tuples_done  | 903953
+```
+
+（构建总共只有两三秒，采样要手快；多轮采到的 `blocks_done`/`tuples_done` 落在区间任何位置都算正常，`blocks_total=22719`、`tuples_total=1502010` 两个总数是稳定的。）
+
+进度视图里的字段本身看不出并行 worker，所以我换用 `pg_stat_activity` 来抓「到底有没有并行」。删掉索引重建，同时采样 `backend_type`。
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "drop index if exists idx_t_gin;" &
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "set maintenance_work_mem='2GB'; create index idx_t_gin_p on t_gin using gin (doc);" &
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -Atc "
+select count(*) filter (where backend_type='parallel worker') as workers,
+       count(*) filter (where backend_type='client backend')   as leaders
+from pg_stat_activity;"
+2|2
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -Atc "
+select pid, backend_type, left(query,50) from pg_stat_activity where backend_type='parallel worker';"
+93547|parallel worker|set maintenance_work_mem='2GB'; create index idx_t
+93548|parallel worker|set maintenance_work_mem='2GB'; create index idx_t
+```
+
+判定点：构建期间出现了 2 个 `parallel worker`，且它们的 `query` 正是那条 `CREATE INDEX`。2 个正好顶到 `max_parallel_maintenance_workers=2` 这个单次操作上限（§1 说过，实例总配额 `max_worker_processes=8` 不构成约束）——GIN 并行构建在这台机器上是真的生效了。
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -Atc "
+select indexrelid::regclass, indisvalid from pg_index where indexrelid='idx_t_gin_p'::regclass;"
+idx_t_gin_p|t
+```
+
+索引有效。再补一句对照：用 `pg_stat_activity` 抓 worker 是可靠的办法，因为 `pg_stat_progress_create_index` 这一版的字段里没有并行 worker 列——完整列清单是 `pid, datid, datname, relid, index_relid, command, phase, lockers_total, lockers_done, current_locker_pid, blocks_total, blocks_done, tuples_total, tuples_done, partitions_total, partitions_done`，只有 `lockers_*`、`blocks_*`、`tuples_*`、`partitions_*` 四组进度计数。
+
+## 四、file_copy_method
+
+`file_copy_method` 是 PG18 新增的 GUC，用来控制「按 FILE_COPY 策略复制数据库/表空间」时底层用哪种复制方式。默认值查出来是 `copy`。
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -Atc "show file_copy_method;"
+copy
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -Atc "
+select name, setting, enumvals, short_desc from pg_settings where name='file_copy_method';"
+file_copy_method|copy|{copy}|Selects the file copy method.
+```
+
+按 `copy` 模式克隆一个库是通的。注意 `CREATE DATABASE` 不能和 `SET` 放进同一个 `-c` 里（`-c "set ...; create database ..."` 会报 `CREATE DATABASE cannot run inside a transaction block`，实测确认），得用 `PGOPTIONS` 把参数注入到独立会话。
+
+```bash
+$ PGOPTIONS='-c file_copy_method=copy' psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "create database db_fcm_copy STRATEGY=FILE_COPY;"
+CREATE DATABASE
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -Atc "select datname from pg_database where datname='db_fcm_copy';"
+db_fcm_copy
+```
+
+**但 `clone` 这个取值在本环境直接不可用。** 同样的命令换成 `clone`：
+
+```bash
+$ PGOPTIONS='-c file_copy_method=clone' psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "create database db_fcm_clone STRATEGY=FILE_COPY;"
+psql: error: connection to server at "127.0.0.1", port 5432 failed: FATAL:  invalid value for parameter "file_copy_method": "clone"
+HINT:  Available values: copy.
+```
+
+`pg_settings.enumvals` 也印证了这一点——只有 `{copy}` 一个取值：
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -Atc "
+select name, setting, enumvals from pg_settings where name='file_copy_method';"
+file_copy_method|copy|{copy}
+```
+
+也就是说，PG18 引入了 `file_copy_method` 这个开关，但在 IvorySQL 5.6 这套二进制 + 该文件系统上，实际可用的只有 `copy` 一档；`clone`（基于 reflink 的零拷贝）在本环境没有可用取值。这个结论是「看 `enumvals` 说话」，不是猜的。
+
+## 五、这次实际踩到的坑
+
+**坑一，`enable_indexskipscan` 不存在。** 我本来想用 `show enable_indexskipscan` 确认 skip scan 是否开启，结果报 `unrecognized configuration parameter`。事实是 skip scan 在 PG18 里没有独立开关，默认就是开的，只能靠 `EXPLAIN` 里的 `Index Searches` 计数去确认它有没有被触发。
+
+**坑二，`SET` 与 `CREATE DATABASE` 放进同一个 `-c` 会失败。** 实测 `-c "set file_copy_method='copy'; create database db_should_fail;"` 报 `ERROR: CREATE DATABASE cannot run inside a transaction block`——一个 `-c` 里的多条语句被当成单个隐式事务发送。两种绕法：拆成两个 `-c`（`SET` 留在会话里，`CREATE DATABASE` 单独成事务，实测可成），或者更稳妥地用 `PGOPTIONS='-c file_copy_method=copy' psql -c "create database ..."`，让参数以启动参数的方式生效。
+
+**坑三，`file_copy_method` 的 `clone` 值在本环境非法。** 这不是语法问题，是取值域问题——`enumvals` 里只有 `{copy}`，`clone` 提示 `Available values: copy.`。做环境评估时别默认两个取值都在。
+
+## 六、终态
+
+复核三项结论：
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -Atc "explain (analyze, buffers) select payload from t_skip where b = 200000;" | grep -i 'Index Searches'
+   Index Searches: 5
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -Atc "select indisvalid from pg_index where indexrelid='idx_t_gin_p'::regclass;"
+t
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -Atc "select enumvals from pg_settings where name='file_copy_method';"
+{copy}
+```
+
+nbtree skip scan（以 `Index Searches` 计数为证据）、GIN 索引并行构建（以构建期间的 `parallel worker` 为证据）、`file_copy_method`（取值域只有 `copy`）三组能力在 `PostgreSQL 18.6 (IvorySQL 5.6)` 上实测完毕，数字与结论均来自真机执行。

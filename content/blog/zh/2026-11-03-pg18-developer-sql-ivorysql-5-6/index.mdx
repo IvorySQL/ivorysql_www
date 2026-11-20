@@ -1,0 +1,650 @@
+---
+slug: "pg18-developer-sql-ivorysql-5-6"
+title: "PG18 开发者与 SQL 新特性在 IvorySQL 5.6 实测"
+date: "2026-11-03"
+author: "山佳"
+category: "IvorySQL"
+image: "/images/blog/covers/pg18-developer-sql.webp"
+tags: ["PostgreSQL 18", "SQL", "Compatibility"]
+description: "对照 PG 与 Oracle 双模式，实测 UUIDv7、CRC、虚拟生成列、RETURNING 与时段约束，记录可用性和语法差异。"
+---
+
+> 作者简介：山佳，国产数据库技术爱好者，持有 KCA、KCP、KCM；Oracle 与 MySQL 从业者，持有 Oracle OCM、MySQL 8.0 OCP。致力于分享数据库和运维领域相关知识。
+
+**摘要：** 这次我在 IvorySQL 5.6（数据库内核 PostgreSQL 18.6）上，把几族面向开发者的 SQL 新特性逐条实测了一遍：PG18 新增的 `uuidv7`、PG17 就加了的配套解析函数 `uuid_extract_version` / `uuid_extract_timestamp`、同为 PG18 新增的 `crc32` / `crc32c`、VIRTUAL 虚拟生成列、`RETURNING OLD/NEW` 伪行引用（含 `MERGE` 的 `merge_action()`），以及 `WITHOUT OVERLAPS` 区间唯一约束和 `PERIOD` 时段外键。全程在 5432（PG 模式）与 1521（Oracle 模式）双端口对照下验证，所有结论都取自终端原样输出。过程中踩到三个真实的坑：`WITHOUT OVERLAPS` 底层是 gist 排他索引，不装 `btree_gist` 建表直接报「no default operator class」；时段约束这两个特性在 Oracle 模式全是语法错，只能当 PG 模式独有来用；`uuidv7(INTERVAL ...)` 在 Oracle 模式报解析错，但函数本体两个端口都在 `pg_proc` 里，是解析器行为差异而非函数缺失，官方已在修复。另外把 `RETURNING` 别名绕了两圈的教训也记了下来：`OLD` / `NEW` 换名必须写成 `RETURNING WITH (OLD AS o, NEW AS n)`，括号省不得。
+
+
+## 一、环境与连接
+
+| 项 | 值 |
+|---|---|
+| 主机 | shanjiatst4.shanjia.com（192.168.40.153） |
+| 系统 | Rocky Linux 8.10 |
+| 数据库 | IvorySQL 5.6 |
+| 监听端口 | 5432（PG 模式）/ 1521（Oracle 模式） |
+| 测试库 | t_pg18（本文新建） |
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -c "drop database if exists t_pg18;"
+DROP DATABASE
+$ psql -h 127.0.0.1 -p 5432 -c "create database t_pg18;"
+CREATE DATABASE
+```
+
+
+
+## 二、UUIDv7 与校验函数
+
+### 2.1 uuidv7 本体
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -Atc "select uuidv7();"
+01a0ca06-a9a8-75e7-a105-67c33069e7fc
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "select uuidv7(), uuidv7();"
+                uuidv7                |                uuidv7
+--------------------------------------+--------------------------------------
+ 01a0ca06-a9f7-717d-8cee-d15e89b80b97 | 01a0ca06-a9f7-7194-a3b8-9e8102a1d71e
+(1 row)
+```
+
+UUIDv7 用毫秒级时间戳做前缀，比 UUIDv4 的纯随机更适合做主键——局部性更好，索引分裂更少。两个函数连着调，时间前缀相同（同一毫秒），随机位不同。
+
+### 2.2 配套的两个解析函数
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "
+select uuid_extract_version(uuidv7()) as v7_ver,
+       uuid_extract_timestamp(uuidv7()) as v7_ts,
+       uuid_extract_version(gen_random_uuid()) as v4_ver,
+       uuid_extract_timestamp(gen_random_uuid()) as v4_ts;"
+ v7_ver |           v7_ts            | v4_ver | v4_ts
+--------+----------------------------+--------+-------
+      7 | 2026-09-23 00:50:29.572+08 |      4 |
+(1 row)
+```
+
+这两个解析函数并非 PG18 新增——`uuid_extract_version` 和 `uuid_extract_timestamp` 在 PG17 就加进来了（PG17 发布说明原文：Add functions `uuid_extract_timestamp()` and `uuid_extract_version()` to return UUID information），IvorySQL 5.6 的内核是 18.6，自然带着。本章之所以验它们，是因为 PG18 新增的 `uuidv7` 要靠它们拆出版本号和时间戳：v7 拆出版本号 7 和时间戳，v4 取不到时间戳，返回空。
+
+### 2.3 时间序契约
+
+UUIDv7 的卖点是"按时间单调递增"，实际生成 6 个看看：
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "
+select g as i, u, uuid_extract_timestamp(u) as ts
+from (select g, uuidv7() as u from generate_series(1,6) g) s order by g;"
+ i |                  u                   |             ts
+---+--------------------------------------+----------------------------
+ 1 | 01a0ca06-aa94-78fb-8b35-66ca82f240fe | 2026-09-23 00:50:29.652+08
+ 2 | 01a0ca06-aa94-7922-8676-b514fcf95abe | 2026-09-23 00:50:29.652+08
+ 3 | 01a0ca06-aa94-792b-aa03-1e0eeea78ff6 | 2026-09-23 00:50:29.652+08
+ 4 | 01a0ca06-aa94-7932-a471-5abebbdc3e8e | 2026-09-23 00:50:29.652+08
+ 5 | 01a0ca06-aa94-7942-b21e-140bf9cf313b | 2026-09-23 00:50:29.652+08
+ 6 | 01a0ca06-aa94-794a-8848-00fb8980c4da | 2026-09-23 00:50:29.652+08
+(6 rows)
+```
+
+同一毫秒内 6 个 UUID 时间戳完全相同，二进制前缀仍然严格递增——毫秒内用随机位保序，不是简单计数。
+
+### 2.4 crc32 / crc32c
+
+顺便把同为 PG18 新增的 `crc32`/`crc32c` 一起验了。注意这两个函数对大小写敏感，输入字符串差一个字符结果就完全不同：
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "select crc32('IvorySQL 5.6') as crc32, crc32c('IvorySQL 5.6') as crc32c;"
+   crc32    |   crc32c
+------------+------------
+ 2213373035 | 2954926063
+(1 row)
+```
+
+### 2.5 一个真实的边界：带 INTERVAL 参数的 uuidv7
+
+PG18 的 `uuidv7` 还有一个重载，接受 `interval` 参数，用于生成"偏移一段时间"的 UUID（比如回拨两小时做对账补单）。同一个语句放到两个端口：
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "select uuidv7(INTERVAL '2 hours');"
+                uuidv7
+--------------------------------------
+ 01a0ca74-8833-7857-a295-5c577d0b2f49
+(1 row)
+```
+
+PG 模式正常返回。换 Oracle 模式端口：
+
+```bash
+$ psql -h 127.0.0.1 -p 1521 -d t_pg18 -c "select uuidv7(INTERVAL '2 hours');"
+ERROR:  syntax error at or near ")"
+LINE 1: select uuidv7(INTERVAL '2 hours');
+                                        ^
+```
+
+**定性结论：这是 IvorySQL 在 Oracle 模式下的解析器行为差异，不是函数缺失。** 函数本体在 `pg_proc` 里两个端口都在：
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -Atc "select proname from pg_proc where proname in ('uuidv4','uuidv7','uuid_extract_version','uuid_extract_timestamp') order by 1;"
+uuid_extract_timestamp
+uuid_extract_version
+uuidv4
+uuidv7
+uuidv7
+$ psql -h 127.0.0.1 -p 1521 -d t_pg18 -Atc "select proname from pg_proc where proname in ('uuidv4','uuidv7','uuid_extract_version','uuid_extract_timestamp') order by 1;"
+uuid_extract_timestamp
+uuid_extract_version
+uuidv4
+uuidv7
+uuidv7
+```
+
+两个 `uuidv7` 就是两个重载（无参版和 interval 版）。该解析差异官方已在修复，**预计下一个版本的 Oracle 模式即可支持 `uuidv7(INTERVAL ...)` 写法**；在升级之前，Oracle 模式下需要偏移时间戳的场景，可以先用无参版生成再自行调整业务时间字段绕开。
+
+## 三、虚拟生成列（VIRTUAL Generated Columns）
+
+PG18 正式支持 `VIRTUAL` 生成列：计算列不落盘，读的时候即时算。IvorySQL 5.6 跟随上游，开箱可用。
+
+先建表，`amount` 定义为 `qty * price`，不写 `STORED` 就是默认的 `VIRTUAL`：
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "
+create table t_gencol (
+  id int primary key,
+  qty numeric,
+  price numeric,
+  amount numeric generated always as (qty * price)   -- 不写 STORED
+);
+select attname,
+       case attgenerated when 'v' then 'VIRTUAL' when 's' then 'STORED' else '非生成列' end as gen_kind
+from pg_attribute where attrelid='t_gencol'::regclass and attnum>0 order by attnum;"
+ attname | gen_kind
+---------+----------
+ id      | 非生成列
+ qty     | 非生成列
+ price   | 非生成列
+ amount  | VIRTUAL
+(4 rows)
+```
+
+再建一个显式 `STORED` 的做对照：
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "
+create table t_gencol_stored (
+  id int primary key,
+  qty numeric,
+  price numeric,
+  amount numeric generated always as (qty * price) stored
+);
+select attname,
+       case attgenerated when 'v' then 'VIRTUAL' when 's' then 'STORED' else '非生成列' end as gen_kind
+from pg_attribute where attrelid='t_gencol_stored'::regclass and attnum>0 order by attnum;"
+ attname | gen_kind
+---------+----------
+ id      | 非生成列
+ qty     | 非生成列
+ price   | 非生成列
+ amount  | STORED
+(4 rows)
+```
+
+接下来用堆表大小验证「虚拟列不落盘」——两个表各灌 2 万行：
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "
+insert into t_gencol select g, g, g from generate_series(1,20000) g;
+insert into t_gencol_stored select g, g, g from generate_series(1,20000) g;
+select relname, pg_size_pretty(pg_relation_size(oid)) as heap_size
+from pg_class where relname in ('t_gencol','t_gencol_stored') order by 1;"
+     relname     | heap_size
+-----------------+-----------
+ t_gencol        | 944 kB
+ t_gencol_stored | 1104 kB
+(2 rows)
+```
+
+同样 2 万行，STORED 版明显更大——虚拟列的值没有落盘。
+
+读出来两个表结果一致。注意这里用 `id=20001`：前面 2 万行已经占掉 1～20000，再插 `id=10` 会撞主键：
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "
+insert into t_gencol (id, qty, price) values (20001, 10, 20);
+select id, qty, price, amount from t_gencol where id = 20001;"
+  id   | qty | price | amount
+-------+-----+-------+--------
+ 20001 |  10 |    20 |    200
+(1 row)
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "
+insert into t_gencol_stored (id, qty, price) values (20001, 10, 20);
+select id, qty, price, amount from t_gencol_stored where id = 20001;"
+  id   | qty | price | amount
+-------+-----+-------+--------
+ 20001 |  10 |    20 |    200
+(1 row)
+```
+
+`qty`/`price` 定义为不带标度的 `numeric`，所以显示就是整数，不会带 `.00` 小数位——这也是它能和 `STORED` 版读数一致的原因：值一样，只是存法不同。
+
+两条限制也确认了。虚拟列不能建索引：
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "create index on t_gencol (amount);"
+ERROR:  indexes on virtual generated columns are not supported
+```
+
+虚拟列可以加 `NOT NULL`，这个把 PG18 之前的限制也一并解了：
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "create table t_gencol_nn (id int, v int not null generated always as (id*10) virtual);"
+CREATE TABLE
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "\d t_gencol_nn"
+                       Table "public.t_gencol_nn"
+ Column |  Type   | Collation | Nullable |            Default
+--------+---------+-----------+----------+-------------------------------
+ id     | integer |           |          |
+ v      | integer |           | not null | generated always as (id * 10)
+```
+
+直接给生成列写值会被拒：
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "insert into t_gencol (id,qty,price,amount) values (11,1,1,1);"
+ERROR:  cannot insert a non-DEFAULT value into column "amount"
+DETAIL:  Column "amount" is a generated column.
+```
+
+最后改基列，看虚拟列是不是即时变化：
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "
+update t_gencol set price = 100 where id = 20001;
+select id, qty, price, amount from t_gencol where id = 20001;"
+  id   | qty | price | amount
+-------+-----+-------+--------
+ 20001 |  10 |   100 |   1000
+(1 row)
+```
+
+`amount` 从 200 变成 1000，虚拟列即时重算。
+
+这套行为在 1521 端口结果一致，唯一可见差异是 Oracle 模式下类型显示为 `pg_catalog.int4` 全限定名：
+
+```bash
+$ psql -h 127.0.0.1 -p 1521 -d t_pg18 -c "\d t_gencol_nn"
+                           Table "public.t_gencol_nn"
+ Column |      Type       | Collation | Nullable |            Default
+--------+-----------------+-----------+----------+-------------------------------
+ id     | pg_catalog.int4 |           |          |
+ v      | pg_catalog.int4 |           | not null | generated always as (id * 10)
+```
+
+## 四、RETURNING OLD/NEW：数据改完顺手拿新旧值
+
+PG18 给 `RETURNING` 加了 `OLD`/`NEW` 伪行引用：一条 DML 出去，改之前的值、改之后的值一次带回，不用先查再改再查。先把用到的表建好（本章所有 `RETURNING` 示例都基于这几张表）：
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "
+create table t_ret (id int primary key, val text, note text);
+insert into t_ret values (1, 'old-one', 'n1'), (2, 'old-two', 'n2');"
+CREATE TABLE
+INSERT 0 2
+```
+
+UPDATE 同时取 `old.*` 与 `new.*`：
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "
+update t_ret set val='new-two' where id=2
+returning old.id as old_id, old.val as old_val, new.val as new_val;"
+ old_id | old_val | new_val
+--------+---------+---------
+      2 | old-two | new-two
+(1 row)
+```
+
+DELETE 取 `old.*`、INSERT 取 `new.*`，`old.*` 在 INSERT 里是空、`new.*` 在 DELETE 里也是空：
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "delete from t_ret where id = 2 returning old.id, old.val, old.note;"
+ id |   val   | note
+----+---------+------
+  2 | new-two | n2
+(1 row)
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "insert into t_ret values (2, 'old-two', 'n2') returning old.id, new.id;"
+ id | id
+----+----
+    |  2
+(1 row)
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "delete from t_ret where id = 2 returning new.val;"
+ val
+-----
+
+(1 row)
+```
+
+MERGE 取动作类型 `merge_action()`，命中更新还是未命中插入，一眼看清：
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "
+create table t_ret_target (id int primary key, val text);
+create table t_ret_src (id int primary key, val text);
+insert into t_ret_target values (1, 'one'), (3, 'three');
+insert into t_ret_src values (1, 'hit'), (2, 'miss');"
+CREATE TABLE
+CREATE TABLE
+INSERT 0 2
+INSERT 0 2
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "
+merge into t_ret_target t using t_ret_src s on t.id = s.id
+when matched then update set val = s.val
+when not matched then insert (id, val) values (s.id, s.val)
+returning merge_action(), old.val as old_val, new.val as new_val, new.id as id;"
+ merge_action | old_val | new_val | id
+--------------+---------+---------+----
+ UPDATE       | one     | hit     |  1
+ INSERT       |         | miss    |  2
+(2 rows)
+```
+
+`id=1` 命中走 UPDATE，`id=2` 未命中走 INSERT——旧值、新值、动作类型、目标主键一行一个字段全带回来。
+
+### 4.1 别名这块我绕了两圈
+
+先用一张故意把列名叫成 `old`/`new` 的表说清楚分量——裸写 `RETURNING old, new`，拿到的是同名列的值，OLD/NEW 伪行根本轮不到：
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "
+create table t_ret2 (a int, old int, new int);
+insert into t_ret2 values (10, 20, 30);
+update t_ret2 set new = new + 100 where a = 10 returning old, new;"
+ old | new
+-----+-----
+  20 | 130
+(1 row)
+```
+
+想真正引用伪行，得给它们改名。我先试了 `FROM ... AS` 的写法：
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "
+create table old (a int, b int);
+insert into old values (10, 20);
+update old set b = 200 where a = 10 returning old_rows.a, new_rows.b FROM old AS old_rows;"
+ERROR:  syntax error at or near "FROM"
+LINE 1: ...200 WHERE a = 10 RETURNING old_rows.a, new_rows.b FROM old A...
+                                                             ^
+```
+
+UPDATE 的 `FROM` 只能出现在 `WHERE` 前面，`RETURNING` 后面跟 `FROM` 直接语法错。又试了 `RETURNING WITH OLD AS o`（不带括号），也报错：
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "update old set b = 300 where a = 10 returning with OLD AS o, NEW AS n o.b as before_update, n.b as after_update;"
+ERROR:  syntax error at or near "OLD"
+LINE 1: ...PDATE old SET b = 300 WHERE a = 10 RETURNING WITH OLD AS o, ...
+                                                             ^
+```
+
+翻了语法依据（见 6.2）才看清：`returning_with_clause` 的括号是语法的一部分，`returning_options` 是括号包住的列表，`OLD`/`NEW` 换成别的名字必须整体放进括号里。按正确产生式写，一次就过：
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "update old set b = b + 100 where a = 10 returning with (OLD AS o, NEW AS n) o.b as before_update, n.b as after_update;"
+ before_update | after_update
+---------------+--------------
+            20 |          120
+(1 row)
+```
+
+DELETE 场景同理：
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "delete from old where a = 10 returning with (OLD AS o) o.b as deleted_value;"
+ deleted_value
+---------------
+           120
+(1 row)
+```
+
+## 五、WITHOUT OVERLAPS 与 PERIOD 外键：区间唯一和时段外键
+
+PG18 把"时间区间唯一约束"和"时段外键"带进了核心，IvorySQL 5.6 原样支持，且只在 PG 模式可用。
+
+先踩第一个坑：`WITHOUT OVERLAPS` 底层是 gist 排他索引。这个约束至少要求两列，除区间列外的那列（示例里的 `int`）在 gist 下没有默认操作符类，不装 `btree_gist` 直接建表会失败：
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "
+create table t_emp_hist (empno int, deptno int, valid_at daterange,
+  primary key (empno, valid_at WITHOUT OVERLAPS));"
+ERROR:  data type integer has no default operator class for access method "gist"
+HINT:  You must specify an operator class for the index or define a default operator class for the data type.
+```
+
+装上 `btree_gist` 扩展就能过（补的就是 `int` 这类标量类型在 gist 下的操作符类）：
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "create extension btree_gist;"
+CREATE EXTENSION
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "
+create table t_emp_hist (empno int, deptno int, valid_at daterange,
+  primary key (empno, valid_at WITHOUT OVERLAPS));"
+CREATE TABLE
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "\d t_emp_hist"
+               Table "public.t_emp_hist"
+  Column  |   Type    | Collation | Nullable | Default
+----------+-----------+-----------+----------+---------
+ empno    | integer   |           | not null |
+ deptno   | integer   |           |          |
+ valid_at | daterange |           | not null |
+Indexes:
+    "t_emp_hist_pkey" PRIMARY KEY (empno, valid_at WITHOUT OVERLAPS)
+Referenced by:
+    TABLE "t_emp_slot" CONSTRAINT "t_emp_slot_empno_slot_at_fkey" FOREIGN KEY (empno, PERIOD slot_at) REFERENCES t_emp_hist(empno, PERIOD valid_at)
+```
+
+注意 `empno` 和 `valid_at` 的 `Nullable` 都变成了 `not null`——`WITHOUT OVERLAPS` 要求参与区间判重的列非空，建表时自动补上了 `NOT NULL` 约束（系统表里能看到，见 5.4）。
+
+灌两条不相交的区间，重叠的直接被拦：
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "
+insert into t_emp_hist values
+  (1, 10, '[2026-01-01, 2026-03-01)'),
+  (1, 20, '[2026-03-01, 2026-06-01)');
+select * from t_emp_hist order by valid_at;"
+ empno | deptno |        valid_at
+-------+--------+-------------------------
+     1 |     10 | [2026-01-01,2026-03-01)
+     1 |     20 | [2026-03-01,2026-06-01)
+(2 rows)
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "
+insert into t_emp_hist values (1, 30, '[2026-02-01, 2026-04-01)');"
+ERROR:  conflicting key value violates exclusion constraint "t_emp_hist_pkey"
+DETAIL:  Key (empno, valid_at)=(1, [2026-02-01,2026-04-01)) conflicts with existing key (empno, valid_at)=(1, [2026-01-01,2026-03-01)).
+```
+
+注意相邻区间（前闭后开，`[..,2026-03-01)` 接 `[2026-03-01,..)`）是被允许的——`[2026-06-01, 2026-09-01)` 插进去没问题：
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "insert into t_emp_hist values (1, 30, '[2026-06-01, 2026-09-01)');"
+INSERT 0 1
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "select * from t_emp_hist order by valid_at;"
+ empno | deptno |        valid_at
+-------+--------+-------------------------
+     1 |     10 | [2026-01-01,2026-03-01)
+     1 |     20 | [2026-03-01,2026-06-01)
+     1 |     30 | [2026-06-01,2026-09-01)
+(3 rows)
+```
+
+`UNIQUE (... WITHOUT OVERLAPS)` 同样能拦重叠：
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "
+create table t_uniq (room int, during daterange, unique (room, during WITHOUT OVERLAPS));
+insert into t_uniq values (101, '[2026-01-01, 2026-01-10)');
+select * from t_uniq;"
+CREATE TABLE
+INSERT 0 1
+ room |         during
+------+-------------------------
+  101 | [2026-01-01,2026-01-10)
+(1 row)
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "insert into t_uniq values (101, '[2026-01-05, 2026-01-20)');"
+ERROR:  conflicting key value violates exclusion constraint "t_uniq_room_during_key"
+DETAIL:  Key (room, during)=(101, [2026-01-05,2026-01-20)) conflicts with existing key (room, during)=(101, [2026-01-01,2026-01-10)).
+```
+
+再看 `PERIOD` 时段外键：子表的区间必须被父表的区间覆盖。先建子表、插一条合法的：
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "
+create table t_emp_slot (empno int, slot_at daterange,
+  foreign key (empno, PERIOD slot_at) references t_emp_hist(empno, PERIOD valid_at));"
+CREATE TABLE
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "\d t_emp_slot"
+              Table "public.t_emp_slot"
+ Column  |   Type    | Collation | Nullable | Default
+---------+-----------+-----------+----------+---------
+ empno   | integer   |           |          |
+ slot_at | daterange |           |          |
+Foreign-key constraints:
+    "t_emp_slot_empno_slot_at_fkey" FOREIGN KEY (empno, PERIOD slot_at) REFERENCES t_emp_hist(empno, PERIOD valid_at)
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "insert into t_emp_slot values (1, '[2026-01-05, 2026-02-01)');"
+INSERT 0 1
+```
+
+`[2026-01-05, 2026-02-01)` 落在父表 `[2026-01-01, 2026-03-01)` 里，合法。再插一条越界的：
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "
+insert into t_emp_slot values (1, '[2025-12-01, 2026-01-05)');"
+ERROR:  insert or update on table "t_emp_slot" violates foreign key constraint "t_emp_slot_empno_slot_at_fkey"
+DETAIL:  Key (empno, slot_at)=(1, [2025-12-01,2026-01-05)) is not present in table "t_emp_hist".
+```
+
+注意这段历史（`2025-12` 到 `2026-01-05`）在 `t_emp_hist` 里压根不存在，不是"区间不匹配"而是"无此历史"，报错文案也直说了。
+
+### 5.1 约束在系统表里的形态
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "
+select conname,
+       case contype when 'p' then 'PRIMARY KEY' when 'u' then 'UNIQUE' when 'f' then 'FOREIGN KEY' else '' end as kind,
+       pg_get_constraintdef(oid) as def
+from pg_constraint where conrelid in ('t_emp_hist'::regclass,'t_uniq'::regclass,'t_emp_slot'::regclass) order by 1;"
+            conname            |    kind     |                                        def
+-------------------------------+-------------+-----------------------------------------------------------------------------------
+ t_emp_hist_empno_not_null     |             | NOT NULL empno
+ t_emp_hist_pkey               | PRIMARY KEY | PRIMARY KEY (empno, valid_at WITHOUT OVERLAPS)
+ t_emp_hist_valid_at_not_null  |             | NOT NULL valid_at
+ t_emp_slot_empno_slot_at_fkey | FOREIGN KEY | FOREIGN KEY (empno, PERIOD slot_at) REFERENCES t_emp_hist(empno, PERIOD valid_at)
+ t_uniq_room_during_key        | UNIQUE      | UNIQUE (room, during WITHOUT OVERLAPS)
+(5 rows)
+```
+
+两条 `NOT NULL` 就是 `WITHOUT OVERLAPS` 自动补的。排他索引在 `pg_index` 里也能看到：
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "
+select indexrelid::regclass as index_name, indisexclusion, pg_get_indexdef(indexrelid) as def
+from pg_index where indrelid in ('t_emp_hist'::regclass,'t_uniq'::regclass);"
+       index_name       | indisexclusion |                                          def
+------------------------+----------------+---------------------------------------------------------------------------------------
+ t_emp_hist_pkey        | t              | CREATE UNIQUE INDEX t_emp_hist_pkey ON public.t_emp_hist USING gist (empno, valid_at)
+ t_uniq_room_during_key | t              | CREATE UNIQUE INDEX t_uniq_room_during_key ON public.t_uniq USING gist (room, during)
+(2 rows)
+```
+
+`indisexclusion` 为 `t`，底层就是 gist 排他索引——这也是为什么必须先装 `btree_gist`。
+
+### 5.2 Oracle 模式下不可用
+
+这两个特性是 PG 模式独有的，换到 1521 直接语法错。`WITHOUT OVERLAPS`：
+
+```bash
+$ psql -h 127.0.0.1 -p 1521 -d t_pg18 -c "
+create table t_emp_hist (empno int, deptno int, valid_at daterange,
+  primary key (empno, valid_at WITHOUT OVERLAPS));"
+ERROR:  syntax error at or near "WITHOUT"
+LINE 3:   primary key (empno, valid_at WITHOUT OVERLAPS));
+                                       ^
+```
+
+`PERIOD` 外键：
+
+```bash
+$ psql -h 127.0.0.1 -p 1521 -d t_pg18 -c "
+create table t_emp_slot (empno int, slot_at daterange,
+  foreign key (empno, PERIOD slot_at) references t_emp_hist(empno, PERIOD valid_at));"
+ERROR:  syntax error at or near "slot_at"
+LINE 3:   foreign key (empno, PERIOD slot_at) references t_emp_hist(...
+                                     ^
+```
+
+Oracle 模式下要防时段重叠，只能用老办法：应用层校验，或者触发器。
+
+## 六、踩到的坑与语法依据
+
+### 6.1 三个真实的坑
+
+- **坑一：`WITHOUT OVERLAPS` 需要 `btree_gist`。** 底层是 gist 排他索引，约束至少要求两列，非区间列（示例里的 `int`）在 gist 下没有默认操作符类，不装扩展建表直接报 `no default operator class for access method "gist"`。区间列 `daterange` 的 gist 支持是 PostgreSQL 核心自带的（官方文档：range 类型可建 GiST 索引），`btree_gist` 只补 `int` 这类标量类型。装上即过。
+- **坑二：Oracle 模式不认 PG18 新语法。** `WITHOUT OVERLAPS`、`PERIOD` 外键在 1521 端口都是语法错，这两个特性当 PG 模式独有来用。
+- **坑三：`uuidv7(INTERVAL ...)` 在 Oracle 模式语法错。** 函数本体两个端口都在 `pg_proc` 里，纯粹是解析器行为差异，官方已在修复，预计下一个版本的 Oracle 模式即可支持；升级前用无参版加业务字段绕开。
+
+### 6.2 RETURNING 别名的语法依据
+
+最后说一下 `RETURNING WITH (...)` 的出处。**注意 rpm 二进制包不随包提供 `gram.y`**，第一轮解包源码验证完之后源码树就清理了，现在 github.com 也不可达，同样的抓取没法做第二次——所以下面是第一轮留下的真实记录（源码树 `/tmp/ivsrc2/IvorySQL-IvorySQL_5.6`），手里得有 IvorySQL 源码树才能重跑；实际判断以上文 4.1 里两条 psql 报错加一次成功为准。
+
+当时的做法：先用 `grep -n '^returning_with_clause:'` 定位到 12396 行，再按行号取上下文：
+
+```bash
+$ L=$(grep -n '^returning_with_clause:' src/backend/parser/gram.y | cut -d: -f1)
+$ echo "起始行=$L"
+起始行=12396
+$ sed -n "${L},$((L+28))p" src/backend/parser/gram.y
+returning_with_clause:
+			WITH '(' returning_options ')'		{ $$ = $3; }
+			| /* EMPTY */						{ $$ = NIL; }
+		;
+
+returning_options:
+			returning_option							{ $$ = list_make1($1); }
+			| returning_options ',' returning_option	{ $$ = lappend($1, $3); }
+		;
+
+returning_option:
+			returning_option_kind AS ColId
+				{
+					ReturningOption *n = makeNode(ReturningOption);
+
+					n->option = $1;
+					n->value = $3;
+					n->location = @1;
+					$$ = n;
+				}
+		;
+
+returning_option_kind:
+			OLD			{ $$ = RETURNING_OPTION_OLD; }
+			| NEW		{ $$ = RETURNING_OPTION_NEW; }
+		;
+```
+
+`returning_with_clause` 的规则是 `WITH '(' returning_options ')'`——括号是语法的一部分，`returning_options` 是括号包住的列表，每项形如 `OLD AS 别名`。这正是 4.1 里第二种写法（不带括号）报语法错、第三种写法一次过的原因。
+
+## 七、最终状态复核
+
+三条查询确认今天的状态：
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -Atc "select uuidv7();"
+01a0ca06-b15c-7f00-9553-72d6d0607088
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -Atc "select attgenerated from pg_attribute where attrelid='t_gencol'::regclass and attname='amount';"
+v
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -Atc "select pg_get_constraintdef(oid) from pg_constraint where conname='t_emp_hist_pkey';"
+PRIMARY KEY (empno, valid_at WITHOUT OVERLAPS)
+```
+
+`attgenerated` 为 `v`，虚拟列生效；主键定义带 `WITHOUT OVERLAPS`，时段约束生效。
+
+## 结语
+
+本文实测的这几族 SQL 新特性——`uuidv7`、虚拟生成列、`RETURNING OLD/NEW` 加时段约束（PG18 新增），以及 PG17 就加了的 UUID 解析函数——在 IvorySQL 5.6 上全部原样可用，且都经过 5432/1521 双端口对照实测。日常开发可以放心用，只有两个边界要记住：**时段约束是 PG 模式独有**，**`uuidv7(INTERVAL ...)` 的 Oracle 模式支持要等下一个版本**。

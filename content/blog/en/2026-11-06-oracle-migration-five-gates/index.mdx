@@ -1,0 +1,156 @@
+---
+slug: "oracle-migration-five-gates"
+title: "The Five Gates of Migrating an Oracle Application"
+date: "2026-11-06"
+author: "Li Cheng"
+category: "IvorySQL"
+image: "/images/blog/covers/oracle-migration-five-gates.webp"
+tags: ["Oracle", "Migration", "Compatibility"]
+description: "A five-layer roadmap for Oracle application migration, with a readiness checklist, recommended sequence and acceptance checks."
+---
+
+> About the author: Li Cheng (GitHub @muzimu217), IvorySQL community contributor.
+
+## Abstract
+
+Moving an Oracle application is often mistaken for a syntax conversion exercise. In practice, behavioral differences in functions, procedural code and system views are what hold migrations up. This article divides migration into five gates, examines how IvorySQL in Oracle compatibility mode approaches each one, and provides a readiness checklist and a recommended sequence. It is for teams planning an Oracle migration and assessing compatibility depth. The focus is a method, rather than a migration verdict.
+
+## 1. Migration Is a Sequence of Gates
+
+An Oracle migration must pass several gates in sequence. If any one blocks progress, the entire migration stops there. Five compatibility layers correspond to five gates:
+
+| Gate | Difficulty |
+| --- | --- |
+| 1. Syntax | Easiest |
+| 2. Types | Moderate |
+| 3. Functions | Most likely to hide traps |
+| 4. Procedural language | Among the hardest |
+| 5. Packages and system views | Hardest |
+
+Gate 3 looks simple, yet is often the easiest place to stumble.
+
+This sequence is deliberate. Earlier gates determine the inputs to later ones: without valid syntax, type mapping cannot proceed; with incorrect type mapping, function output is meaningless. Work through the gates in order rather than skipping ahead.
+
+Scope: this is a migration roadmap, not a complete case study. I have not migrated an entire production Oracle application end to end. I have tested the IvorySQL-side function behaviors discussed here in Oracle compatibility mode, including UTL_URL escaping and SYS_CONTEXT. The scope of each layer is based on official IvorySQL documentation and the repository implementation, including ivorysql_ora and PL/iSQL.
+
+![The five gates of Oracle application migration](/images/blog/oracle-migration-five-gates/image1-en.webp)
+
+Figure 1. The five migration gates, with difficulty increasing through the layers.
+
+## 2. The Five-Gate Checklist
+
+| Gate | Typical issues | IvorySQL implementation path |
+| --- | --- | --- |
+| 1. Syntax | dual, (+) outer joins | Dual parsers; `compatible_mode=oracle` selects the Oracle parser. |
+| 2. Types | NUMBER precision, time components in DATE | ivorysql_ora maps types; verify precision using boundary cases. |
+| 3. Functions | Behavioral details of NVL / TO_DATE / DECODE | Implemented individually in ivorysql_ora; I tested UTL_URL escaping. |
+| 4. Procedural language | PL/SQL stored procedures and triggers | PL/iSQL, with syntax close to Oracle PL/SQL. |
+| 5. Packages and views | PACKAGE and V$ views | PL/iSQL supports PACKAGE; ivorysql_ora supplies built-in packages and system views. |
+
+The key column is the implementation path, not the list of typical issues. Anyone can list problems. Whether you can map each problem to an implementation determines whether a migration takes days or months.
+
+> The IvorySQL column refers throughout to Oracle compatibility mode. At initialization, `initdb -m oracle` (the default) or `initdb -m pg` determines the cluster form. A PG-only cluster cannot later switch to Oracle mode. Within an Oracle-compatible cluster, a session can use `SET ivorysql.compatible_mode = oracle` for Oracle syntax and `SET ivorysql.compatible_mode = pg` for native syntax. Oracle syntax failing in a PG-only cluster usually means the wrong cluster mode was selected, rather than the compatibility feature being absent.
+
+> This table describes IvorySQL's implementation paths, not acceptance criteria for your migration. Verify the functions and views your application actually uses; Section 5 provides a checklist.
+
+## 3. Traps at the Function Gate
+
+Gate 3 is particularly tricky: identical syntax can produce different results.
+
+While implementing UTL_URL.ESCAPE, I expected to follow Oracle's documentation. The documentation itself was inconsistent: the 19c overview and usage pages listed different sets of reserved characters, and the guidance on escaping `#` changed between 19c and 21c. Runtime behavior also differed: my XE 11.2, 18c and 21c tests produced one set of results, while another Oracle environment discussed in the PR produced a different set.
+
+Testing against actual systems was the only way to settle it. I ran identical inputs on Oracle XE 11.2, 18c and 21c and compared the output line by line to determine what needed escaping. Two findings emerged:
+
+- `%` is always escaped, and previously escaped input is escaped again (`a%20b` → `a%2520b`).
+
+- On the three XE environments I tested, there were ten reserved characters: `;/?:@&=+$,`. The 19c overview lists twelve, but its usage page lists ten. `%` is always escaped in all environments, so including it in the overview's reserved-character set is incorrect; the behavior of `#` varies by environment.
+
+Checking whether a function exists is easy. Checking whether its behavior matches Oracle is what matters. Matching names without matching behavior will not get a migration through testing.
+
+That is why migration tests must go beyond successful execution. Execution proves that a function exists, not that it calculates the correct result. Useful cases run identical inputs on Oracle and the new database, then diff their outputs.
+
+Note: this behavioral match excludes one intentional deviation from Oracle: the default encoding when `url_charset` is omitted. PR #1728 documents it.
+
+This became my template for other compatibility work: read the documentation, identify inconsistencies between documents, then resolve them with tests on actual systems. The last step takes the most time, but only its findings can justify the implementation.
+
+## 4. Behavior Is the Larger Part of the Work
+
+| Difference | Ease of detection | Ease of fixing |
+| --- | --- | --- |
+| Syntax | Easy: compilation fails with an error. | Easy. |
+| Types | Moderate: precision problems may emerge late. | Moderate. |
+| Behavior | Difficult: execution succeeds but the result is wrong. | Difficult: test each case individually. |
+
+The most expensive migration issues are those that raise no error. An error at least gives you a location; a behavioral difference may not. Budget syntax and type work in days, but function and behavioral work in weeks. Underbudgeting means catching up just before launch. When evaluating an Oracle replacement, look beyond supported syntax to how many of your function behaviors actually match.
+
+![Syntax differences above the surface and behavioral differences below it](/images/blog/oracle-migration-five-gates/image2-en.webp)
+
+Figure 2. Syntax differences are above the surface; the larger mass of behavioral differences is below it.
+
+## 5. Pre-Migration Readiness Checklist
+
+| Check | How to check | Passing condition |
+| --- | --- | --- |
+| Oracle functions used by the application | Search the codebase and export dependencies. | A documented inventory, rather than recollection. |
+| Functions with environment-dependent behavior | Compare documentation, then test. | Cases such as UTL_URL are listed separately. |
+| PL/SQL procedures and packages | Inspect procedures and packages in the schema. | If present, prioritize gates 4 and 5. |
+| Official IvorySQL compatibility list | Consult official documentation or the community. | A verifiable table, not marketing copy. |
+| Behavioral test coverage | Check whether tests only assert successful execution. | Assertions verify the actual results. |
+| Rollback plan | Back up before migration and run old and new systems in parallel. | A working path back if something goes wrong. |
+
+Review this checklist at the migration kickoff rather than waiting for testing. The early items determine the workload; the last determines whether you can safely cut over.
+
+## 6. Recommended Migration Sequence
+
+- Inventory first. List every function, type, procedure and package. An incomplete inventory becomes repeated patch-up work later.
+
+- Syntax next. Run the original SQL and fix it until it executes without errors. This is the cheapest step.
+
+- Functions next. Run the same inputs on both systems and diff the outputs. This is the most time-consuming step.
+
+- Then procedural language. Exercise compilation, invocation and exception branches.
+
+- Finish with packages and views. They sit close to the kernel, so leave them for the final stage.
+
+- Keep rollback available throughout. Run both systems in parallel and cut over only when the data agrees.
+
+Reversing the sequence, fixing functions before syntax, is like building on quicksand: a syntax change can invalidate earlier tests.
+
+Keep rerunnable cases at every step. Migration is not a one-time operation. Version upgrades and patches will require regression testing with the same cases. The earlier you collect them, the more effort you save later.
+
+## 7. Five Common Migration Traps
+
+- Matching function names without matching behavior. Identical names may return different results; tests that only assert successful execution miss this. Run identical inputs on Oracle and the new database and diff the outputs.
+
+- Ignoring type precision. `NUMBER` precision and scale, or the time components of `DATE`, can expose problems late. Add boundary-value and precision cases alongside the type-mapping table.
+
+- Treating successful execution as completed migration. Compilation and executable SQL are only the first gate. Regress business workflows, exception paths and incremental processing.
+
+- Assuming a tested behavior is universal. `#` is a URL fragment delimiter; without escaping it to `%23`, a URL may be truncated. It was always escaped in my XE 11.2/18c/21c tests, but another Oracle environment in the PR discussion left it unescaped by default. Compatibility findings must be verified in your own target environment, rather than copied from someone else's tests.
+
+- Using marketing claims as acceptance criteria. Broad compatibility is a capability claim, not the acceptance condition for your application. Your own test cases determine acceptance.
+
+These are five common migration acceptance anti-patterns rather than independent technical features. They tend not to appear at compilation time, but surface together late in testing or just before launch.
+
+## 8. Acceptance After Migration
+
+| Acceptance check | How to verify | Do not cut over if it fails |
+| --- | --- | --- |
+| Data consistency | Compare row counts, primary-key ranges and checksums of key fields. | Differences suggest missing or incorrect migrated data. |
+| Business regression | Run core workflows, not just individual SQL statements. | Incremental processing is particularly vulnerable. |
+| Performance comparison | Run the same benchmark scripts on both systems. | Unacceptable slowdown requires rework. |
+| Rollback rehearsal | Actually roll back once, rather than only reviewing the plan. | An untested rollback creates uncertainty during an incident. |
+
+The last check is the easiest to skip. A rollback plan written in a document does not count as a rehearsal; actually executing it does.
+
+## 9. A Candid Conclusion
+
+Draw the map correctly before choosing a route.
+
+This article provides a map, not a report of a completed journey. Its value is showing the distance to the next stage, rather than walking it for you. A complete migration case study needs a real end-to-end scenario.
+
+## References
+
+- [Oracle 11.2 UTL_URL](https://docs.oracle.com/cd/E11882_01/appdev.112/e40758/u_url.htm) · [19c](https://docs.oracle.com/en/database/oracle/oracle-database/19/arpls/UTL_URL.html) · [21c](https://docs.oracle.com/en/database/oracle/oracle-database/21/arpls/UTL_URL.html)
+
+- [IvorySQL PR #1728：UTL_URL.ESCAPE](https://github.com/IvorySQL/IvorySQL/pull/1728)

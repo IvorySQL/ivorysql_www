@@ -1,0 +1,287 @@
+---
+slug: "pg18-index-query-ivorysql-5-6"
+title: "Testing PostgreSQL 18 Index and Query Features on IvorySQL 5.6"
+date: "2026-11-09"
+author: "Shan Jia"
+category: "IvorySQL"
+image: "/images/blog/covers/pg18-index-query.webp"
+tags: ["PostgreSQL 18", "Index", "Query Optimization"]
+description: "Verify B-tree skip scan, parallel GIN builds and file_copy_method on IvorySQL 5.6 using terminal evidence and environment-specific results."
+---
+
+> About the author: Shan Jia is a database enthusiast with KCA, KCP and KCM certifications, and an Oracle and MySQL practitioner holding Oracle OCM and MySQL 8.0 OCP certifications. He shares knowledge about databases and operations.
+
+**Abstract:** This article tests three index and query capabilities in IvorySQL 5.6 (PG18): nbtree skip scan, parallel GIN index builds and `file_copy_method`. Skip scan lets a multicolumn B-tree index participate even without an equality condition on its leading column. I observed its work through `Index Searches`: five searches in the skip-scan case versus one in the control. On a 1.5-million-row jsonb table, the GIN build exposed two parallel workers. `file_copy_method` accepted only `copy`; `clone` was invalid in this environment.
+
+Reading convention: a `$` prefix in a code block marks a command run as a regular user; the remaining lines are actual terminal output.
+
+## 1. Environment and Software
+
+| Item | Value |
+| --- | --- |
+| Host | shanjiatst4.shanjia.com (192.168.40.153) |
+| OS / kernel | Rocky Linux 8.10 / 4.18.0-553.el8_10.x86_64 |
+| CPU / memory / disk | 4 vCPU / 7.5 GiB / NVMe 60 G, xfs root filesystem |
+| SELinux / firewalld | enforcing / running |
+
+| Software | Details |
+| --- | --- |
+| ivorysql5-5.6-74c405c.x86_64 | Installation prefix /usr/ivory-5 |
+| Database kernel | PostgreSQL 18.6 |
+| Access methods (pg_am) | brin / btree / gin / gist / hash / heap / spgist |
+| Test database | t_pg18 |
+
+All operations use `t_pg18`. Create it first, dropping an existing copy when rerunning the tests:
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d postgres -c "drop database if exists t_pg18;" -c "create database t_pg18;"
+DROP DATABASE
+CREATE DATABASE
+```
+
+Inspect the relevant settings and access methods before testing.
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -Atc "select version();"
+PostgreSQL 18.6 (IvorySQL 5.6) on x86_64-pc-linux-gnu, compiled by gcc (GCC) 10.2.0, 64-bit
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -Atc "
+select name, setting from pg_settings
+where name in ('file_copy_method','max_parallel_maintenance_workers','max_worker_processes');"
+file_copy_method|copy
+max_parallel_maintenance_workers|2
+max_worker_processes|8
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -Atc "show enable_indexskipscan;"
+ERROR:  unrecognized configuration parameter "enable_indexskipscan"
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -Atc "select amname from pg_am order by 1;"
+brin
+btree
+gin
+gist
+hash
+heap
+spgist
+```
+
+Three points first. `enable_indexskipscan` **does not exist** in this version: skip scan is enabled without a separate GUC to disable it. `file_copy_method` exists and defaults to `copy`. Read the two worker settings separately: `max_worker_processes=8` is the instance-wide background-worker budget, described in the source article as shared by parallel workers, autovacuum workers and other background processes; `max_parallel_maintenance_workers=2` limits parallel workers for an individual maintenance operation such as `CREATE INDEX`. Thus a two-worker build limit and an overall budget of eight are different limits. Section 3 uses two as the per-operation limit for the observed build.
+
+## 2. nbtree Skip Scan
+
+Skip scan addresses a familiar issue with a multicolumn B-tree index `(a, b)`: queries lacking an equality condition on leading column `a` have historically struggled to use it efficiently. PG18 can probe the later column for successive distinct values of the leading column.
+
+Create a table with very low leading-column cardinality: `a` has three values, while `b` has high cardinality. Insert 300,000 rows and build an `(a, b)` index.
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "
+drop table if exists t_skip;
+create table t_skip (a int, b int, payload text);
+insert into t_skip select (g % 3) + 1, g, 'row-' || g from generate_series(1,300000) g;
+create index idx_t_skip_ab on t_skip (a, b);
+analyze t_skip;"
+INSERT 0 300000
+CREATE INDEX
+ANALYZE
+```
+
+The key query filters only on `b`, without a condition on `a`.
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "explain (analyze, buffers) select payload from t_skip where b = 200000;"
+                                                         QUERY PLAN
+-----------------------------------------------------------------------------------------------------------------------------
+ Index Scan using idx_t_skip_ab on t_skip  (cost=0.42..21.73 rows=1 width=10) (actual time=37.625..37.637 rows=1.00 loops=1)
+   Index Cond: (b = 200000)
+   Index Searches: 5
+   Buffers: shared hit=13 read=9
+ Planning:
+   Buffers: shared hit=69 read=1
+ Planning Time: 0.334 ms
+ Execution Time: 37.667 ms
+(8 rows)
+```
+
+The evidence is `Index Searches: 5`: this index scan performed five positioning searches. In this test, the author attributes them to probing the three distinct `a` values plus two boundaries. The plan is `Index Scan using idx_t_skip_ab`, not a sequential table scan. Check the returned row:
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "select payload from t_skip where b = 200000;"
+  payload
+------------
+ row-200000
+```
+
+This was the first execution after building the index, before its pages were cached (`read=9`), and took 37.7 ms. Immediately rerunning the query reduced the time to about 0.1 ms (`Buffers: shared hit=22`), while `Index Searches: 5` remained unchanged. The search count is the skip-scan evidence; timing reflects cold versus warm cache state.
+
+For a control, add an equality condition on `a`:
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "explain (analyze, buffers) select payload from t_skip where a = 1 and b = 200000;"
+                                                        QUERY PLAN
+--------------------------------------------------------------------------------------------------------------------------
+ Index Scan using idx_t_skip_ab on t_skip  (cost=0.42..8.44 rows=1 width=10) (actual time=0.004..0.004 rows=0.00 loops=1)
+   Index Cond: ((a = 1) AND (b = 200000))
+   Index Searches: 1
+   Buffers: shared hit=3
+ Planning Time: 0.040 ms
+ Execution Time: 0.009 ms
+(6 rows)
+```
+
+Returning zero rows is expected: with `a = (g % 3) + 1`, the row whose `b` is 200000 has `a=3`, not 1. The important observation is `Index Searches: 1`: an equality condition on the leading column permits one positioning search instead of probing successive values.
+
+A range predicate, `b between 200000 and 200010`, also triggers skip scan: five index searches return eleven rows.
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "explain (analyze, buffers) select payload from t_skip where b between 200000 and 200010;"
+                                                         QUERY PLAN
+-----------------------------------------------------------------------------------------------------------------------------
+ Index Scan using idx_t_skip_ab on t_skip  (cost=0.42..55.57 rows=10 width=10) (actual time=0.006..0.011 rows=11.00 loops=1)
+   Index Cond: ((b >= 200000) AND (b <= 200010))
+   Index Searches: 5
+   Buffers: shared hit=16
+ Planning:
+   Buffers: shared hit=10
+ Planning Time: 0.051 ms
+ Execution Time: 0.016 ms
+(8 rows)
+```
+
+| Predicate | Plan | Index Searches | Execution time |
+| --- | --- | --- | --- |
+| `b = 200000` | Index Scan (skip scan) | 5 | 37.7 ms cold / 0.1 ms warm |
+| `a = 1 AND b = 200000` | Index Scan (direct positioning) | 1 | 0.009 ms |
+| `b between 200000 and 200010` | Index Scan (skip scan) | 5 | 0.016 ms |
+
+All three are index scans. Their search counts distinguish them: an equality condition on the leading column needs one search; without it, skip scan probes successive values, five searches here. Treating this count as an observable metric lets us verify whether skip scan was used.
+
+## 3. Parallel GIN Index Builds
+
+PG18 supports parallel `CREATE INDEX ... USING gin`. Create a 1.5-million-row jsonb table and increase `maintenance_work_mem` to 2 GB for the build.
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "
+drop table if exists t_gin;
+create table t_gin (id int, doc jsonb);
+insert into t_gin
+select g, jsonb_build_object('k1',g,'k2',g%1000,'tags',jsonb_build_array(g%7,g%11))
+from generate_series(1,1500000) g;"
+INSERT 0 1500000
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -Atc "show max_parallel_maintenance_workers;"
+2
+```
+
+Start the build in the background and sample `pg_stat_progress_create_index`. Two GIN build phases are visible. The per-operation worker limit is two; the instance-wide `max_worker_processes=8` budget is not the binding limit in this test.
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "set maintenance_work_mem='2GB'; create index idx_t_gin on t_gin using gin (doc);" &
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -x -c "
+select command, phase, blocks_total, blocks_done, tuples_total, tuples_done
+from pg_stat_progress_create_index;"
+-[ RECORD 1 ]+-------------------------------
+command      | CREATE INDEX
+phase        | building index: scanning table
+blocks_total | 22719
+blocks_done  | 10106
+tuples_total | 0
+tuples_done  | 0
+```
+
+A later sample shows the phase changing from scanning the table to merging tuples:
+
+```bash
+-[ RECORD 1 ]+-------------------------------
+command      | CREATE INDEX
+phase        | building index: merging tuples
+blocks_total | 0
+blocks_done  | 0
+tuples_total | 1502010
+tuples_done  | 903953
+```
+
+The build takes only two or three seconds, so sampling must be quick. Values of `blocks_done` and `tuples_done` may fall anywhere within their ranges across repeated runs. The totals remain stable: `blocks_total=22719` and `tuples_total=1502010`.
+
+The progress fields do not directly expose parallel workers. To determine whether parallelism actually occurs, drop and rebuild the index while sampling `backend_type` in `pg_stat_activity`.
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "drop index if exists idx_t_gin;" &
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "set maintenance_work_mem='2GB'; create index idx_t_gin_p on t_gin using gin (doc);" &
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -Atc "
+select count(*) filter (where backend_type='parallel worker') as workers,
+       count(*) filter (where backend_type='client backend')   as leaders
+from pg_stat_activity;"
+2|2
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -Atc "
+select pid, backend_type, left(query,50) from pg_stat_activity where backend_type='parallel worker';"
+93547|parallel worker|set maintenance_work_mem='2GB'; create index idx_t
+93548|parallel worker|set maintenance_work_mem='2GB'; create index idx_t
+```
+
+During the build, two `parallel worker` processes appear, each running the same `CREATE INDEX`. This reaches the per-operation `max_parallel_maintenance_workers=2` limit. Parallel GIN construction is demonstrably active on this machine.
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -Atc "
+select indexrelid::regclass, indisvalid from pg_index where indexrelid='idx_t_gin_p'::regclass;"
+idx_t_gin_p|t
+```
+
+The index is valid. `pg_stat_activity` is a useful way to observe the workers because this version's `pg_stat_progress_create_index` has no parallel-worker column. Its full column list is `pid, datid, datname, relid, index_relid, command, phase, lockers_total, lockers_done, current_locker_pid, blocks_total, blocks_done, tuples_total, tuples_done, partitions_total, partitions_done`, with progress counters for lockers, blocks, tuples and partitions.
+
+## 4. file_copy_method
+
+`file_copy_method`, introduced in PG18, selects the underlying copying method for database/tablespace copying under the FILE_COPY strategy. Its observed default is `copy`.
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -Atc "show file_copy_method;"
+copy
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -Atc "
+select name, setting, enumvals, short_desc from pg_settings where name='file_copy_method';"
+file_copy_method|copy|{copy}|Selects the file copy method.
+```
+
+Creating a database in `copy` mode succeeds. `CREATE DATABASE` cannot share one `-c` argument with `SET`: `-c "set ...; create database ..."` reports `CREATE DATABASE cannot run inside a transaction block`, as tested. Use `PGOPTIONS` to inject the setting into a separate invocation.
+
+```bash
+$ PGOPTIONS='-c file_copy_method=copy' psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "create database db_fcm_copy STRATEGY=FILE_COPY;"
+CREATE DATABASE
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -Atc "select datname from pg_database where datname='db_fcm_copy';"
+db_fcm_copy
+```
+
+**The `clone` value is unavailable in this environment.** Substitute `clone` in the same command:
+
+```bash
+$ PGOPTIONS='-c file_copy_method=clone' psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "create database db_fcm_clone STRATEGY=FILE_COPY;"
+psql: error: connection to server at "127.0.0.1", port 5432 failed: FATAL:  invalid value for parameter "file_copy_method": "clone"
+HINT:  Available values: copy.
+```
+
+`pg_settings.enumvals` confirms that only `{copy}` is available:
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -Atc "
+select name, setting, enumvals from pg_settings where name='file_copy_method';"
+file_copy_method|copy|{copy}
+```
+
+PG18 introduced the setting, but this IvorySQL 5.6 binary and filesystem combination supports only `copy`. The reflink-based zero-copy `clone` mode is not a permitted value here. This finding is based on `enumvals`, rather than an assumption.
+
+## 5. Practical Traps
+
+**Trap 1: `enable_indexskipscan` does not exist.** `show enable_indexskipscan` reports `unrecognized configuration parameter`. PG18 has no dedicated switch; use the `Index Searches` count in `EXPLAIN` to determine whether skip scan is triggered.
+
+**Trap 2: `SET` and `CREATE DATABASE` fail in one `-c`.** The tested `-c "set file_copy_method='copy'; create database db_should_fail;"` reports `ERROR: CREATE DATABASE cannot run inside a transaction block`. Multiple statements in one `-c` are sent in a single implicit transaction. Use two `-c` arguments so `SET` remains in the session while `CREATE DATABASE` executes separately, or use `PGOPTIONS='-c file_copy_method=copy' psql -c "create database ..."` to set it at startup.
+
+**Trap 3: `clone` is invalid for `file_copy_method` here.** This is a value-domain issue, not a syntax issue. `enumvals` contains only `{copy}`, and the error reports `Available values: copy.` Do not assume both values exist when evaluating an environment.
+
+## 6. Final State
+
+Recheck the three findings:
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -Atc "explain (analyze, buffers) select payload from t_skip where b = 200000;" | grep -i 'Index Searches'
+   Index Searches: 5
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -Atc "select indisvalid from pg_index where indexrelid='idx_t_gin_p'::regclass;"
+t
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -Atc "select enumvals from pg_settings where name='file_copy_method';"
+{copy}
+```
+
+nbtree skip scan is evidenced by `Index Searches`; parallel GIN builds by `parallel worker` processes during construction; and `file_copy_method` by its `{copy}` value domain. These tests were run on `PostgreSQL 18.6 (IvorySQL 5.6)`, with observations and figures taken from actual execution.

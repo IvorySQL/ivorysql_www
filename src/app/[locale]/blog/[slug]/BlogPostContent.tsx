@@ -1,12 +1,12 @@
 import Image from "next/image";
 
 import { ChevronLeft, Linkedin, Twitter } from "lucide-react";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 
 import { MDXRenderer } from "./MDXRenderer";
 
 import { Link } from "@/i18n/navigation";
-import authorsData from "@/lib/authors.json";
+import { resolveAuthor } from "@/lib/authors";
 import type { BlogPostWithContent } from "@/lib/posts";
 
 type BlogPost = {
@@ -38,7 +38,8 @@ export function BlogPostContent({
 }: BlogPostContentProps) {
   const t = useTranslations("BlogPostUI");
   const tc = useTranslations("Common");
-  const authorInfo = resolveAuthor(post.author);
+  const locale = useLocale();
+  const authorInfo = resolveAuthor(post.author, locale);
   const shareUrl = `https://www.ivorysql.org${post.path}`;
   const encodedTitle = encodeURIComponent(post.title);
 
@@ -245,19 +246,5 @@ export function BlogPostContent({
         </div>
       </div>
     </article>
-  );
-}
-
-function resolveAuthor(authorId: string) {
-  return (
-    (
-      authorsData as Array<{
-        author_id: string;
-        author: string;
-        author_url: string;
-        author_image_url: string;
-        position: string;
-      }>
-    ).find((a) => a.author_id === authorId) ?? null
   );
 }

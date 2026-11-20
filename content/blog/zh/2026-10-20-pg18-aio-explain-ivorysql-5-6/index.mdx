@@ -1,0 +1,694 @@
+---
+slug: "pg18-aio-explain-ivorysql-5-6"
+title: "PostgreSQL 18 性能与执行计划新特性实测"
+date: "2026-10-20"
+author: "山佳"
+category: "IvorySQL"
+image: "/images/blog/covers/pg18-aio-explain.webp"
+tags: ["PostgreSQL 18", "AIO", "EXPLAIN"]
+description: "IvorySQL 5.6 上实测 PostgreSQL 18 异步 I/O、观测视图和执行计划信息，记录 io_uring 内核限制与冷读验证。"
+---
+
+> 作者简介：山佳，国产数据库技术爱好者，持有 KCA、KCP、KCM；Oracle 与 MySQL 从业者，持有 Oracle OCM、MySQL 8.0 OCP。致力于分享数据库和运维领域相关知识。
+
+**摘要：** PostgreSQL 18 带来了异步 I/O（AIO）子系统和一批执行计划新信息，我在 IvorySQL 5.6（数据库内核版本 PostgreSQL 18.6）上把 AIO 从头到尾摸了一遍——三档 `io_method` 切换、`pg_aios` 观测视图、`pg_stat_io` 里新增的 `io worker` 后端类型与 `wal` I/O 对象，以及清空页缓存后的冷读对比。最有价值的一条是排障：切到 `io_method=io_uring` 会让服务直接起不来，日志写的是「操作系统内核不支持 io_uring」，而本机操作系统内核是 4.18。另外实测到 `EXPLAIN (ANALYZE)` 默认带 `Buffers`、索引节点多了 `Index Searches`、显式加 `WAL` 选项后写操作会输出 WAL 用量（该选项自 PG17 起支持、默认不输出），`ANALYZE VERBOSE` 也补上了资源统计。
+
+
+## 一、环境与软件
+
+| 项目 | 取值 |
+| --- | --- |
+| 主机 | shanjiatst4.shanjia.com（192.168.40.153） |
+| OS / 操作系统内核 | Rocky Linux 8.10 / 4.18.0-553.el8_10.x86_64 |
+| CPU / 内存 / 磁盘 | 4 vCPU / 7.5 GiB / NVMe 60 G xfs（/） |
+| SELinux / firewalld | enforcing / running |
+
+| 软件 | 说明 |
+| --- | --- |
+| ivorysql5-5.6-74c405c.x86_64 | 服务端 rpm，安装前缀 /usr/ivory-5 |
+| 数据库内核版本 | PostgreSQL 18.6 |
+| 关键编译选项 | `--with-liburing`、`--with-numa`、`--with-zstd`、`--with-lz4`、`--with-llvm` |
+| shared_buffers | 128MB（16384 × 8kB） |
+
+## 二、AIO 子系统与它的观测面
+
+PG18 的 AIO 是这一版数据库内核里改动最大的一块。先把它相关的 GUC 全列出来。
+
+后文所有操作都在测试库 `t_pg18` 里进行，先建库（老用户重跑时先删掉旧的，保证幂等）：
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d postgres -c "drop database if exists t_pg18;" -c "create database t_pg18;"
+DROP DATABASE
+CREATE DATABASE
+```
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "
+select name, setting, unit, context from pg_settings
+where name in ('io_method','io_combine_limit','io_max_combine_limit','io_max_concurrency',
+               'effective_io_concurrency','maintenance_io_concurrency','backend_flush_after','shared_buffers')
+order by 1;"
+            name            | setting | unit |  context
+----------------------------+---------+------+------------
+ backend_flush_after        | 0       | 8kB  | user
+ effective_io_concurrency   | 16      |      | user
+ io_combine_limit           | 16      | 8kB  | user
+ io_max_combine_limit       | 16      | 8kB  | postmaster
+ io_max_concurrency         | 64      |      | postmaster
+ io_method                  | worker  |      | postmaster
+ maintenance_io_concurrency | 16      |      | user
+ shared_buffers             | 16384   | 8kB  | postmaster
+```
+
+`io_method` 是核心开关，允许三档，默认就是 `worker`：
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "
+select enumvals from pg_settings where name='io_method';"
+        enumvals
+------------------------
+ {sync,worker,io_uring}
+```
+
+`io_max_concurrency` 的 `boot_val` 是 `-1`，`reset_val` 解析成 `64`，这点留意一下。AIO 还有个观测视图 `pg_aios`——按官方文档，它列出的是当前正在使用的异步 I/O 句柄（I/O handle，也就是正在准备、执行或完成过程中的 I/O 操作），不是操作系统意义上的文件句柄。空闲时一行都没有：
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -Atc "select count(*) from pg_aios;"
+0
+```
+
+看列名也能看出来，`state`/`operation`/`off`/`length`/`target` 描述的是每一次在飞的 I/O：
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "\d pg_aios"
+                 View "pg_catalog.pg_aios"
+     Column      |   Type   | Collation | Nullable | Default 
+-----------------+----------+-----------+----------+---------
+ pid             | integer  |           |          | 
+ io_id           | integer  |           |          | 
+ io_generation   | bigint   |           |          | 
+ state           | text     |           |          | 
+ operation       | text     |           |          | 
+ off             | bigint   |           |          | 
+ length          | bigint   |           |          | 
+ target          | text     |           |          | 
+ handle_data_len | smallint |           |          | 
+ raw_result      | integer  |           |          | 
+ result          | text     |           |          | 
+ target_desc     | text     |           |          | 
+ f_sync          | boolean  |           |          | 
+ f_localmem      | boolean  |           |          | 
+ f_buffered      | boolean  |           |          | 
+```
+
+要有行，得赶上有 I/O 在飞的时候。清掉操作系统页缓存，后台跑一次 499 MB 全表扫描（记得 `set max_parallel_workers_per_gather = 0`），前台每 0.15 秒轮询一次 `pg_aios`，扫描窗口里就能抓到在飞句柄。其中一次轮询：
+
+```bash
+-- poll 2 --
+ aios_in_flight 
+----------------
+              5
+(1 row)
+
+  pid  | io_id |      state       | operation | length | target 
+-------+-------+------------------+-----------+--------+--------
+ 21646 |  1152 | COMPLETED_SHARED | readv     | 131072 | smgr
+ 21646 |  1153 | COMPLETED_SHARED | readv     | 131072 | smgr
+ 21646 |  1154 | SUBMITTED        | readv     | 131072 | smgr
+(3 rows)
+```
+
+`state` 在 `SUBMITTED`（已提交给 io worker）和 `COMPLETED_SHARED`（已完成）之间跳动，`operation` 是 `readv`，`target` 是 `smgr`。所以这个视图的正确用法是「有批量 I/O 在飞时看队列深度和状态」，不是「看文件句柄」——底下终态复核里那句 `select count(*) from pg_aios;` 返回 `0`，也只是因为查询时实例闲着，跟视图能不能观测是两回事。
+
+真正干活的是常驻的 `io worker` 进程——默认 `io_method=worker` 下，实例一启动就有 3 个：
+
+```bash
+$ ps -ef | grep 'io worker' | grep -v grep
+ivorysql   73231   73230  0 22:33 ?  00:00:00 postgres: io worker 0
+ivorysql   73232   73230  0 22:33 ?  00:00:00 postgres: io worker 1
+ivorysql   73233   73230  0 22:33 ?  00:00:00 postgres: io worker 2
+```
+
+这个 `io worker` 也进了 `pg_stat_io` 的 `backend_type` 维度。需要说清一点：`bulkread`/`bulkwrite` 这两个 context 不是 PG18 新增的，它们自 PG16 引入 `pg_stat_io` 起就存在（对应批量读、批量写场景）；PG18 真正新增的是把 `wal` 作为 I/O 对象纳入统计，以及 `io worker` 这个 backend_type。实测当前实例 `backend_type` 共 14 行、`object|context` 共 8 行：
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -Atc "select distinct backend_type from pg_stat_io order by 1;"
+autovacuum launcher
+autovacuum worker
+background worker
+background writer
+checkpointer
+client backend
+io worker
+slotsync worker
+standalone backend
+startup
+walreceiver
+walsender
+walsummarizer
+walwriter
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -Atc "select distinct object, context from pg_stat_io order by 1,2;"
+relation|bulkread
+relation|bulkwrite
+relation|init
+relation|normal
+relation|vacuum
+temp relation|normal
+wal|init
+wal|normal
+```
+
+底层确实是编进了 io_uring 的（动态库链接到了 `liburing.so.2`），这也是后面 `io_uring` 那档能被选中的原因：
+
+```bash
+$ ldd /usr/ivory-5/bin/postgres | grep uring
+	liburing.so.2 => /usr/ivory-5/bin/../lib/liburing.so.2 (0x00007f9c27ad9000)
+$ /usr/ivory-5/bin/pg_config --configure | tr ' ' '\n' | grep -i uring
+'--with-liburing'
+```
+
+## 三、三档 io_method 切换：io_uring 直接把库打挂了
+
+造一张 300 万行、约 499 MB 的表做冷读底料，然后逐档切 `io_method`。
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "
+drop table if exists t_aio;
+create table t_aio (id int, payload text);
+insert into t_aio select g, 'payload-' || g || '-' || repeat('x', 120) from generate_series(1, 3000000) g;
+vacuum t_aio;" 
+INSERT 0 3000000
+VACUUM
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -Atc "select pg_size_pretty(pg_total_relation_size('t_aio'));"
+499 MB
+```
+
+`payload` 的取值是 `'payload-' || g || '-' || repeat('x', 120)`：既保证每行足够宽（撑出约 499 MB 的全表扫描量），又让第四节冷读查询 `payload like '%424242%'` 能确定性地命中 3 行（id 分别为 424242、1424242、2424242——三者的十进制串里都含连续子串 `424242`）。如果按 `repeat('x', 120)` 造数据，`like` 一行都匹配不到，冷读就退化成纯顺序扫描，对比仍然成立，但计数结果是 0——这点新用户复现时容易懵，特别说明一下。
+
+### 3.1 io_method = sync
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "alter system set io_method='sync';"
+ALTER SYSTEM
+$ systemctl restart ivorysql
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -Atc "show io_method;"
+sync
+$ ps -ef | grep 'io worker' | grep -v grep | wc -l
+0
+```
+
+切到 `sync` 后，`io worker` 进程数归零——这是 `sync` 档的特征。
+
+### 3.2 io_method = worker
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "alter system set io_method='worker';"
+ALTER SYSTEM
+$ systemctl restart ivorysql
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -Atc "show io_method;"
+worker
+$ ps -ef | grep 'io worker' | grep -v grep | wc -l
+3
+```
+
+`io worker` 又回来了 3 个。
+
+### 3.3 io_method = io_uring：服务起不来
+
+我按同样的路子切到 `io_uring`，结果实例直接挂了——`systemctl restart` 返回失败，`psql` 连不上。
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "alter system set io_method='io_uring';"
+ALTER SYSTEM
+$ systemctl restart ivorysql
+Job for ivorysql.service failed because the control process exited with error code.
+See "systemctl status ivorysql.service" and "journalctl -xe" for details.
+$ psql -h 127.0.0.1 -p 5432 -c "select 1;"
+psql: error: connection to server at "127.0.0.1", port 5432 failed: Connection refused
+	Is the server running on that host and accepting TCP/IP connections?
+```
+
+看 systemd 状态，启动进程以 status=1 反复失败，重启计数到 5 后被 systemd 判定「启动过快」。
+
+```bash
+# systemctl status ivorysql
+● ivorysql.service - IvorySQL 5.6 database server
+   Active: failed (Result: exit-code) since Sun 2026-09-20 22:49:53 CST; 24s ago
+  Process: 82824 ExecStart=/usr/ivory-5/bin/postgres -D /usr/ivory-5/data (code=exited, status=1/FAILURE)
+```
+
+翻 journal，第一现场写得很清楚：
+
+```bash
+# journalctl -u ivorysql --no-pager | grep -A2 io_uring | tail -6
+Sep 20 22:49:52 shanjiatst4.shanjia.com postgres[82824]: FATAL:  could not setup io_uring queue: Function not implemented
+Sep 20 22:49:52 shanjiatst4.shanjia.com postgres[82824]: HINT:  The kernel does not support io_uring.
+Sep 20 22:49:52 shanjiatst4.shanjia.com postgres[82824]: LOG:  database system is shut down
+```
+
+`could not setup io_uring queue: Function not implemented`，提示「操作系统内核不支持 io_uring」。核对一下操作系统内核版本：`4.18.0-553.el8_10.x86_64`——Rocky 8 的 4.18 操作系统内核没有把 io_uring 这套系统调用编进去，所以即便二进制链接了 `liburing.so.2`，这一档也起不来。
+
+再往内核里钻一层，把「没编进去」坐实。`/proc/sys/kernel` 下没有任何 io_uring 开关：
+
+```bash
+# ls /proc/sys/kernel/ | grep -i uring
+(无 io_uring_disabled / io_uring_group 等开关)
+```
+
+`/proc/kallsyms` 里 io_uring 的系统调用符号倒是有一组，但六个入口全指向同一个地址，而且都是弱符号（`W`）：
+
+```bash
+# grep -E 'io_uring' /proc/kallsyms
+ffffffffb7d21450 W __ia32_sys_io_uring_enter
+ffffffffb7d21450 W __ia32_sys_io_uring_register
+ffffffffb7d21450 W __ia32_sys_io_uring_setup
+ffffffffb7d21450 W __x64_sys_io_uring_enter
+ffffffffb7d21450 W __x64_sys_io_uring_register
+ffffffffb7d21450 W __x64_sys_io_uring_setup
+```
+
+查一下这个地址上挂的规范符号——`T` 是文本段里的强符号，一长串 `W` 全是它的别名：
+
+```bash
+# grep '^ffffffffb7d21450' /proc/kallsyms | head -3
+ffffffffb7d21450 T sys_ni_syscall
+ffffffffb7d21450 W __ia32_compat_sys_s390_ipc
+ffffffffb7d21450 W __ia32_sys_io_uring_enter
+```
+
+也就是说，io_uring 的三个系统调用号（x86_64 上是 425/426/427）在这套内核里都落在 `sys_ni_syscall`——「未实现」占位桩上。直接捅一下 425 号调用，返回和 postgres 日志里一字不差：
+
+```bash
+# perl -e 'my $r = syscall(425, 256, 0, 0, 0, 0, 0); printf "ret=%s errno=%s\n", defined($r) ? $r : "undef", $!;'
+ret=-1 errno=Function not implemented
+```
+
+此时 `postgresql.auto.conf` 里已经写死成 `io_uring`：
+
+```bash
+# cat /usr/ivory-5/data/postgresql.auto.conf
+io_method = 'io_uring'
+```
+
+### 3.4 排障与恢复
+
+服务起不来，`psql` 也进不去，没法用 SQL 改回来。我是直接改 `postgresql.auto.conf` 把它切回 `worker`，再拉起来。
+
+```bash
+# sed -i "s/io_method = 'io_uring'/io_method = 'worker'/" /usr/ivory-5/data/postgresql.auto.conf
+# systemctl start ivorysql
+# systemctl status ivorysql | grep Active
+   Active: active (running) since Sun 2026-09-20 22:50:18 CST; 3s ago
+# pg_isready -h 127.0.0.1 -p 5432
+127.0.0.1:5432 - accepting connections
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -Atc "show io_method;"
+worker
+```
+
+定性：这不是产品缺陷，而是「二进制支持 + 操作系统内核不支持」的组合结果。当前操作系统内核 `4.18` 不提供 io_uring，所以在 IvorySQL 5.6 上 `io_method` 实际可用的是 `sync` 与 `worker` 两档；要用 `io_uring`，得换一个操作系统内核支持 io_uring 的环境。这里只做有依据的陈述：PostgreSQL 官方文档对 `io_uring` 这一档写的前提只有「编译时链接 liburing」一条，并没有给出内核版本门槛，所以本文的结论也只覆盖实测的 `4.18.0-553.el8_10.x86_64` 这套环境，不外推。**另一条教训是：`io_method` 是 postmaster 级参数，改错值会让实例起不来，改之前先在心里准备好「改 auto.conf 回滚」这条路。**
+
+## 四、冷读对比：sync 与 worker
+
+把 `io_method` 切好、清掉操作系统页缓存，再跑同一条大范围读，比较冷读耗时和 `pg_stat_io` 的读量。底料还是那张 499 MB 的 `t_aio`。两档交替跑、每档 3 个样本，避免固定顺序把系统漂移算进结论。
+
+### 4.1 统计口径：两个必须纠正的误区
+
+先说结论性的口径问题，不然数字会骗人：
+
+1. **`pg_stat_io` 是累计值，口径是「最近一次统计重置以来」。** 本环境实测重启并不会清零它（第三轮留痕：重启前后 `client backend|bulkread` 的 `reads` 都是 19028），所以既不能按「实例启动以来的总和」理解，更不能把直接读出来的值当成某一轮的读量。必须每轮查询前后各取一次快照，用差值作为该轮读量。
+2. **必须禁掉并行查询。** `pg_stat_io` 里并行 worker 的 I/O 记在自己的 `backend_type` 下，不并入 `client backend`。不禁并行时，一次 499 MB 的全表扫描只会在 `client backend` 里留下约 180 MB 的读量，剩下的读发生在并行 worker 里，口径是不完整的。所以每轮查询前先 `set max_parallel_workers_per_gather = 0`。
+
+快照 SQL 与冷读 SQL：
+
+```bash
+$ cat > snap.sql <<'EOF'
+-- read_bytes 直接取原始字节数：做差时避免 pg_size_pretty() 的取整误差
+select sum(reads) as reads, sum(read_bytes) as read_bytes,
+       sum(hits) as hits, sum(evictions) as evictions
+from pg_stat_io
+where object='relation' and backend_type='client backend' and context='bulkread';
+EOF
+$ cat > cold.sql <<'EOF'
+set max_parallel_workers_per_gather = 0;
+\timing on
+select count(*) from t_aio where payload like '%424242%';
+EOF
+```
+
+### 4.2 测试设计：交替顺序 + 每档 3 样本
+
+两档的对比要经得起推敲，设计上必须处理两件事：**样本量**和**顺序效应**。固定「先 `sync` 后 `worker`」跑两轮，`worker` 永远跑在 `sync` 之后——操作系统页缓存状态、系统负载随时间的变化都会算到 `worker` 头上，方向也许还对，幅度一定不可信。所以正式对比这样设计：每档 3 个样本，顺序按 `sync → worker → sync → worker → worker → sync` 交替，让两档轮流占据不同的时间位置，把漂移均摊掉；快照直接取原始字节数做差。
+
+每个 block 的动作是：`alter system set io_method` → 重启（确认生效值和 io worker 进程数）→ `drop_caches` 制造冷读窗口 → 取快照 → 禁并行冷读 → 再取快照（`_第五轮P1_冷读交替多轮.sh`）：
+
+```bash
+block() {
+  local mode=$1 tag=$2
+  printf "alter system set io_method = '%s';\n" "$mode" > /tmp/pg18v5/set_io.sql
+  runf /tmp/pg18v5/set_io.sql > /dev/null
+  systemctl restart ivorysql.service > /dev/null 2>&1
+  sleep 3
+  sync; echo 3 > /proc/sys/vm/drop_caches   # 重新制造冷读窗口
+  runf /tmp/pg18v5/snap.sql                 # before（原始字节数）
+  runf /tmp/pg18v5/cold.sql                 # 禁并行的冷读 count
+  runf /tmp/pg18v5/snap.sql                 # after
+}
+block sync s1;  block worker w1;  block sync s2
+block worker w2; block worker w3;  block sync s3
+```
+
+（`runf` 是前几轮沿用的 `psql -f` 封装，含 `su` 切 `ivorysql` 用户。）
+
+### 4.3 实测输出
+
+第一个 block（`sync`）的完整回显，快照差值即单轮读量：
+
+```bash
+===== [s1] io_method=sync =====
+生效值: sync
+io worker 进程数: 0
+drop_caches: ok
+--- before ---
+ reads | read_bytes | hits  | evictions 
+-------+------------+-------+-----------
+ 40254 | 5078089728 | 10627 |       188
+(1 row)
+--- 冷读 ---
+ count 
+-------
+     3
+(1 row)
+Time: 1096.013 ms (00:01.096)
+--- after ---
+ reads | read_bytes | hits  | evictions 
+-------+------------+-------+-----------
+ 44247 | 5600985088 | 10627 |       188
+(1 row)
+```
+
+before/after 做差：`reads` 44247 − 40254 = 3993 次，`read_bytes` 5600985088 − 5078089728 = 522895360 字节。六个 block 整理成表（留痕 `第五轮P1_冷读交替多轮_原始回显.txt`）：
+
+| 位置 | 档位 | 冷读耗时 | 单轮读次数 | 单轮读字节 |
+| --- | --- | --- | --- | --- |
+| 1 | sync | 1096.013 ms | 3993 | 522895360 |
+| 2 | worker | 483.826 ms | 3993 | 522895360 |
+| 3 | sync | 588.823 ms | 3993 | 522895360 |
+| 4 | worker | 516.882 ms | 3993 | 522895360 |
+| 5 | worker | 466.301 ms | 3993 | 522895360 |
+| 6 | sync | 536.931 ms | 3993 | 522895360 |
+
+六个 block 的读量完全一致——3993 次、522895360 字节（498.5 MB），正好把 499 MB 的表整个读一遍——`io_method` 只改变「怎么读」，不改变「读多少」。
+
+### 4.4 结论
+
+读量上两档没有差别（见上表）——`io_method` 改变的是「怎么读」，不是「读多少」；差别全在耗时上。
+
+正式对比之前，先按固定顺序（先 `sync` 后 `worker`）预跑过两轮：`worker` 两轮都更快（911→526 ms、710→522 ms，快 26%~42%）。方向与正式对比一致，但每档只有两轮、顺序固定，幅度不可信，只当预跑看。
+
+交替顺序、每档 3 个样本的正式结果：
+
+- **三组位置配对，`worker` 全快**：1096.013→483.826 ms（快 56%）、588.823→516.882 ms（快 12%）、536.931→466.301 ms（快 13%）。第三组里 `sync` 被安排在最后一个位置（前五个 block 之后系统已充分运行），`worker` 仍然快 13%——顺序效应抵消后优势没有消失。
+- **中位数**：`sync` 588.823 ms vs `worker` 483.826 ms，`worker` 快约 18%。第一个 `sync` 样本 1096.013 ms 明显偏高（`t_aio` 是重建后的首次全扫），剔除后 `sync` 两轮为 588.823/536.931 ms，与 `worker` 的差距收窄到 12%~13%。
+
+仍然要挂在嘴边的局限：每档 3 个样本、单连接单条顺序扫描、NVMe、未测并发与机械盘；「队列更深、并发更高或用机械盘会放大差距」依旧是没有数据的猜测。所以结论的准确表述是：**在本机这种单连接顺序扫描的负载下，`worker` 稳定更快（3/3 位置配对同向，中位数快约 18%）**；换成并发混合负载或机械机会怎样，本文没有答案，不下结论。
+
+## 五、EXPLAIN 增强
+
+PG18 把 `EXPLAIN` 的信息密度又加了一截。最直观的一条是 `EXPLAIN (ANALYZE)` 不带 `BUFFERS` 也会自动输出缓存命中。先造测试数据：
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "
+drop table if exists t_exp;
+create table t_exp (id int primary key, cat int, val numeric, note text);
+insert into t_exp select g, g % 50, random()*1000, 'n-' || g from generate_series(1,300000) g;
+create index idx_t_exp_cat on t_exp (cat);
+analyze t_exp;"
+DROP TABLE
+CREATE TABLE
+INSERT 0 300000
+CREATE INDEX
+ANALYZE
+```
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "explain (analyze) select count(*) from t_exp;"
+                                                                QUERY PLAN
+------------------------------------------------------------------------------------------------------------------------------------------
+ Finalize Aggregate  (cost=5412.10..5412.11 rows=1 width=8) (actual time=10.308..12.086 rows=1.00 loops=1)
+   Buffers: shared hit=2206
+   ->  Gather  (cost=5411.88..5412.09 rows=2 width=8) (actual time=10.300..12.081 rows=2.00 loops=1)
+         Workers Planned: 1
+         Workers Launched: 1
+         Buffers: shared hit=2206
+         ->  Partial Aggregate  (cost=4411.88..4411.89 rows=1 width=8) (actual time=8.981..8.981 rows=2.00 loops=2)
+               Buffers: shared hit=2206
+               ->  Parallel Seq Scan on t_exp  (cost=0.00..3970.71 rows=176471 width=0) (actual time=0.005..5.154 rows=150000.00 loops=2)
+                     Buffers: shared hit=2206
+ Planning:
+   Buffers: shared hit=21 read=1
+ Planning Time: 0.109 ms
+ Execution Time: 12.104 ms
+(14 rows)
+```
+
+我一条 `BUFFERS` 都没加，`Buffers:` 行照样出现了。索引节点上多了 `Index Searches`：
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "explain (analyze) select * from t_exp where cat = 7;"
+                                                           QUERY PLAN
+------------------------------------------------------------------------------------------------------------------------------
+ Bitmap Heap Scan on t_exp  (cost=72.01..2354.76 rows=6140 width=27) (actual time=0.403..1.830 rows=6000.00 loops=1)
+   Recheck Cond: (cat = 7)
+   Heap Blocks: exact=2206
+   Buffers: shared hit=2206 read=8
+   ->  Bitmap Index Scan on idx_t_exp_cat  (cost=0.00..70.47 rows=6140 width=0) (actual time=0.236..0.237 rows=6000.00 loops=1)
+         Index Cond: (cat = 7)
+         Index Searches: 1
+         Buffers: shared read=8
+ Planning:
+   Buffers: shared hit=11
+ Planning Time: 0.136 ms
+ Execution Time: 1.947 ms
+(12 rows)
+```
+
+### 写操作的 WAL 计数：要显式写 `WAL` 选项才打印
+
+写操作的 WAL 用量同样要看，但它**不是默认行为，也不是 PG18 新增**——`WAL` 选项自 PG17 起就支持，且必须在 `EXPLAIN` 里显式写出来才会输出。同一台机器上做了对照：不写 `WAL` 选项，输出里没有任何 WAL 行：
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "begin; explain (analyze) update t_exp set val=val+1 where cat=7; rollback;"
+BEGIN
+                                                              QUERY PLAN
+----------------------------------------------------------------------------------------------------------------------
+ Update on t_exp  (cost=72.01..2370.11 rows=0 width=0) (actual time=16.452..16.453 rows=0.00 loops=1)
+   Buffers: shared hit=62402 read=1 dirtied=53 written=50
+   ->  Bitmap Heap Scan on t_exp  (cost=72.01..2370.11 rows=6140 width=38) (actual time=0.371..2.548 rows=6000.00 loops=1)
+         Recheck Cond: (cat = 7)
+         Heap Blocks: exact=2206
+         Buffers: shared hit=2214
+         ->  Bitmap Index Scan on idx_t_exp_cat  (cost=0.00..70.47 rows=6140 width=0) (actual time=0.172..0.172 rows=6000.00 loops=1)
+               Index Cond: (cat = 7)
+               Index Searches: 1
+               Buffers: shared hit=8
+ Planning:
+   Buffers: shared hit=3
+ Planning Time: 0.046 ms
+ Execution Time: 16.505 ms
+(14 rows)
+
+ROLLBACK
+```
+
+显式加上 `wal` 选项，`WAL: records=... bytes=...` 就出来了，写节点（Update）和读节点（Bitmap Heap Scan）都会带：
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "begin; explain (analyze, wal) update t_exp set val=val+1 where cat=7; rollback;"
+BEGIN
+                                                              QUERY PLAN
+---------------------------------------------------------------------------------------------------------------------------------------
+ Update on t_exp  (cost=72.95..2416.88 rows=0 width=0) (actual time=20.011..20.012 rows=0.00 loops=1)
+   Buffers: shared hit=68431 dirtied=49 written=49
+   WAL: records=24097 bytes=1709068
+   ->  Bitmap Heap Scan on t_exp  (cost=72.95..2416.88 rows=6262 width=38) (actual time=0.419..5.087 rows=6000.00 loops=1)
+         Recheck Cond: (cat = 7)
+         Heap Blocks: exact=2250
+         Buffers: shared hit=2263
+         WAL: records=1 bytes=52
+         ->  Bitmap Index Scan on idx_t_exp_cat  (cost=0.00..71.39 rows=6262 width=0) (actual time=0.232..0.232 rows=11999.00 loops=1)
+               Index Cond: (cat = 7)
+               Index Searches: 1
+               Buffers: shared hit=13
+ Planning Time: 0.064 ms
+ Execution Time: 20.028 ms
+(14 rows)
+
+ROLLBACK
+```
+
+`Update` 节点上出现了 `dirtied`、`written` 这些写相关的计数；`VACUUM/ANALYZE` 的 `WAL usage: ... buffers full` 也是同一套资源统计的口径（见下一节）。顺手试了下采样输出 `SAMPLE`，这个版本还不认：
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "explain (analyze, sample 10) select count(*) from t_exp;"
+ERROR:  unrecognized EXPLAIN option "sample"
+LINE 1: explain (analyze, sample 10) select count(*) from t_exp;
+                          ^
+```
+
+判定点：`Buffers` 默认出现、`Index Searches` 出现；写节点的 WAL 计数要显式加 `WAL` 选项才输出（PG17 起支持，非默认）；`SAMPLE` 选项在当前版本不存在。
+
+## 六、ANALYZE VERBOSE 与 vacuum_truncate
+
+`ANALYZE VERBOSE` 的尾部补上了资源统计——平均读写速率、buffer 用量、WAL 用量、CPU 时间。注意这些统计行是 `INFO` 级输出，要用 `psql` 直接看 stderr：
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "analyze (verbose) t_exp;"
+INFO:  analyzing "public.t_exp"
+INFO:  "t_exp": scanned 2295 of 2295 pages, containing 300000 live rows and 11998 dead rows; 30000 rows in sample, 300000 estimated total rows
+INFO:  finished analyzing table "t_pg18.public.t_exp"
+avg read rate: 0.000 MB/s, avg write rate: 0.000 MB/s
+buffer usage: 2763 hits, 0 reads, 0 dirtied
+WAL usage: 8 records, 0 full page images, 4806 bytes, 0 buffers full
+system usage: CPU: user: 0.05 s, system: 0.00 s, elapsed: 0.05 s
+ANALYZE
+```
+
+`vacuum_truncate` 这个 GUC 是 PG18 新增的（`Enables vacuum to truncate empty pages at the end of the table`，默认 `on`，context 是 `user`）。我删掉 10 万行里的 9.9 万行，分别在 `off` 和 `on` 下各 VACUUM 一次，对比表文件大小。
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "
+drop table if exists t_vt;
+create table t_vt (id int primary key, pad text);
+insert into t_vt select g, repeat('x', 100) from generate_series(1,100000) g;
+select pg_relation_size('t_vt') as before_size;
+delete from t_vt where id > 1000;"
+DROP TABLE
+CREATE TABLE
+INSERT 0 100000
+ before_size
+-------------
+    14131200
+DELETE 99000
+```
+
+关掉 `vacuum_truncate` 再 VACUUM，尾部空页被保留（1725 页原样不动）：
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "
+set vacuum_truncate=off; vacuum (verbose) t_vt;
+select pg_relation_size('t_vt') as size_truncate_off;"
+INFO:  vacuuming "t_pg18.public.t_vt"
+pages: 0 removed, 1725 remain, 1725 scanned (100.00% of total), 0 eagerly scanned
+tuples: 99000 removed, 1000 remain, 0 are dead but not yet removable
+ size_truncate_off
+-------------------
+          14131200
+```
+
+打开默认值（`on`）再 VACUUM，1725 页被截断到 18 页，文件大小从 14 MB 掉到 147 KB：
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -c "
+reset vacuum_truncate; vacuum (verbose) t_vt;
+select pg_relation_size('t_vt') as size_truncate_on;"
+INFO:  vacuuming "t_pg18.public.t_vt"
+INFO:  table "t_vt": truncated 1725 to 18 pages
+pages: 1707 removed, 18 remain, 1 scanned (0.06% of total), 0 eagerly scanned
+ size_truncate_on
+------------------
+           147456
+```
+
+| vacuum_truncate | VACUUM 后表大小 | 页数 |
+| --- | --- | --- |
+| off | 14131200 字节 | 1725 |
+| on（默认） | 147456 字节 | 18 |
+
+这个参数的价值在于：临时表或「一次性用完后长期空置」的表，希望对尾部空间更激进地回收。至于持续增长的表，直觉上「`off` 能少一次截断开销」——补两个用例，看看这个直觉站不站得住。
+
+**用例一：持续增长的表（只追加、不删除）。** 两张结构相同的表 `t_vt_grow_on`/`t_vt_grow_off`，各灌 10 万行打底，之后每追加 10 万行 VACUUM 一次。`on` 侧三轮的关键回显：
+
+```bash
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -f vt_grow_on.sql
+--- on：初始 vacuum ---
+pages: 0 removed, 1725 remain, 1725 scanned (100.00% of total), 0 eagerly scanned
+VACUUM
+Time: 8.233 ms
+ grow_on_size 
+--------------
+     14131200
+--- on：追加 10 万行后再 vacuum ---
+pages: 0 removed, 3449 remain, 1725 scanned (50.01% of total), 0 eagerly scanned
+VACUUM
+Time: 4.078 ms
+ grow_on_size 
+--------------
+     28254208
+--- on：再追加 10 万行后再 vacuum ---
+pages: 0 removed, 5173 remain, 1725 scanned (33.35% of total), 0 eagerly scanned
+VACUUM
+Time: 4.136 ms
+ grow_on_size 
+--------------
+     42377216
+```
+
+脚本就是 `set vacuum_truncate = on;` 之后 `vacuum (verbose)` 加 `select pg_relation_size(...)` 的循环；`off` 侧换成 `set vacuum_truncate = off;` 原样再跑一遍。两边的 `pages` 行一模一样，大小逐轮相同，耗时同一水平：
+
+| 轮次 | on：文件大小（字节） | off：文件大小（字节） | on：VACUUM | off：VACUUM |
+| --- | --- | --- | --- | --- |
+| 初始 | 14131200 | 14131200 | 8.233 ms | 3.571 ms |
+| 追加 10 万行 | 28254208 | 28254208 | 4.078 ms | 4.167 ms |
+| 再追加 10 万行 | 42377216 | 42377216 | 4.136 ms | 3.479 ms |
+
+追加写入时尾部页永远不满，VACUUM 压根不触发截断——verbose 里连 `truncated` 行都没有。所以「对持续增长的表，`off` 能少一次截断开销」这个说法，在纯增长场景里没有实测支撑：没有截断，就无所谓少不少。
+
+**用例二：尾部反复「删空再写回」的波动表。** 这才是空间回收上真正有差别的场景：`on` 每轮把文件截到 144 KB，下次写回重新 extend 回 14 MB；`off` 一路维持 14 MB 高水位，写回直接复用空闲页。空间走势是确定的，难下结论的是耗时——同一张表上先后做两档，前一轮操作留下的缓存和索引状态会污染后一轮，单样本耗时不能横比。所以用两张结构相同的独立表——`t_vt_a` 用 `vacuum_truncate = on`，`t_vt_b` 用 `off`——每轮对两张表做同样的动作（删尾部 9.9 万行 → `vacuum (verbose)` → 写回 9.9 万行），共 3 轮，顺序按 a→b、b→a、a→b 交替（脚本 `_第五轮P2_vt独立双表.sh`，留痕 `第五轮P2_vt独立双表_原始回显.txt`）：
+
+| 轮次（先后） | a(on) VACUUM | a(on) 写回 | b(off) VACUUM | b(off) 写回 |
+| --- | --- | --- | --- | --- |
+| 第 1 轮（a 先） | 9.516 ms | 93.346 ms | 5.750 ms | 93.218 ms |
+| 第 2 轮（b 先） | 9.392 ms | 94.546 ms | 6.075 ms | 82.664 ms |
+| 第 3 轮（a 先） | 13.091 ms | 85.341 ms | 5.055 ms | 75.438 ms |
+| 均值 | 10.666 ms | 91.078 ms | 5.627 ms | 83.773 ms |
+
+空间侧每轮都有 verbose 的直接证据：`on` 每轮回显都有 `truncated 1725 to 18 pages`（14131200 → 147456 字节），`off` 每轮都是 `0 removed, 1725 remain`；写回之后两张表都回到 14131200。
+
+性能侧，3 轮独立表交替之后可以下结论了：
+
+- **VACUUM 本身**：`on` 每轮慢约 5.0 ms（均值 10.666 vs 5.627），3/3 轮同向——这是截断动作（`ftruncate` 加元数据更新）的固定开销。
+- **写回 INSERT**：`on` 每轮慢约 7.3 ms（均值 91.078 vs 83.773），3/3 轮同向（第 1 轮基本持平）——截断把文件缩到 144 KB，写回时要重新 extend 回 14 MB；`off` 维持高水位，写回直接复用空闲页。
+- **DELETE 两边相当**（均值 24.9 vs 23.8 ms），符合预期——删除不受截断影响。
+
+合计每轮约 12 ms 的差距，换的是文件从 14 MB 缩到 144 KB。量级提醒：这是 10 万行、14 MB 的小表，差距在毫秒级；表越大截断和 extend 的绝对代价都会上去，但未测大表，不给外推结论。另外官方文档提醒，截断时要短暂拿 `ACCESS EXCLUSIVE` 锁，繁忙表上值得掂量（锁竞争本次未实测）。
+
+修正后的结论分场景说：**尾部会被清空时**（临时表、批量删完长期空置、波动表删尾），`off` 留高水位、`on` 把文件截下去，按要不要回收空间选——要回收，就接受每轮约 12 ms 的额外开销（10 万行小表口径，独立双表 3 轮交替实测）；**纯增长表两个档位没有可测差异**，不存在「少一次截断开销」这回事。
+
+## 七、终态
+
+回到稳定态并复核：
+
+```bash
+$ systemctl is-active ivorysql
+active
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -Atc "show io_method;"
+worker
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -Atc "select count(*) from pg_aios;"
+0
+$ psql -h 127.0.0.1 -p 5432 -d t_pg18 -Atc "select pg_size_pretty(pg_total_relation_size('t_vt'));"
+2392 kB
+```
+
+最后这个数比 §6 的 147456 字节大，不矛盾：147456 是 `pg_relation_size` 量的堆表（截断后剩 18 页），终态这里用的是 `pg_total_relation_size`，把索引也算进去——恢复终态那次 VACUUM 的回显里写着 `index "t_vt_pkey": pages: 276 in total, 270 newly deleted`，索引页不会被 VACUUM 截断，堆表之外还有这 276 页索引，合计 2449408 字节，即 2392 kB。
+
+AIO 的三档 `io_method`、`pg_aios` 与 `pg_stat_io` 的新维度、`EXPLAIN` 的 `Buffers`/`Index Searches`/WAL 计数（显式选项）、`ANALYZE VERBOSE` 的资源统计、`vacuum_truncate` 的空间回收，在 `PostgreSQL 18.6 (IvorySQL 5.6)` 上全部验证过；其中 `io_uring` 一档受限于 4.18 操作系统内核不可用，已如实记录并恢复。
+
+## 参考链接
+
+以下均为 PostgreSQL 18 官方文档，本文引用的定义、默认值和注意事项都可在对应页面核对：
+
+- `pg_aios` 视图：https://www.postgresql.org/docs/18/view-pg-aios.html —— 异步 I/O 句柄（I/O handle）各列含义的权威定义，§2 的列清单和「不是操作系统文件句柄」的表述出自这里。
+- `pg_stat_io`：https://www.postgresql.org/docs/18/monitoring-stats.html —— object/context/backend_type 三维度 I/O 统计的字段说明，§2 观测面和 §4 冷读口径的依据。
+- `EXPLAIN`：https://www.postgresql.org/docs/18/sql-explain.html —— `Buffers`、`Index Searches`、`WAL` 选项与计数含义，§5 的依据。
+- `ANALYZE`：https://www.postgresql.org/docs/18/sql-analyze.html —— `VERBOSE` 输出里资源统计行（读写速率、buffer、WAL、CPU）的说明，§6 前半部分的依据。
+- 服务端配置（`vacuum_truncate`）：https://www.postgresql.org/docs/18/runtime-config-vacuum.html —— PG18 新增截断开关的定义、默认值 `on`，以及「截断需要 ACCESS EXCLUSIVE 锁」的原文提醒，§6 后半部分的依据。
