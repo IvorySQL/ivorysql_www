@@ -7,6 +7,7 @@ import { useLocale, useTranslations } from "next-intl";
 
 import { MDXRenderer } from "@/app/[locale]/blog/[slug]/MDXRenderer";
 import { Link } from "@/i18n/navigation";
+import { getEventTypeLabel } from "@/lib/event-types";
 import type { IvoryEventWithContent } from "@/lib/events";
 import { parseUTCDate } from "@/lib/utils";
 
@@ -57,7 +58,7 @@ export function EventDetail({
         <div className="mx-auto max-w-3xl">
           {/* Event Type Badge */}
           <span className="text-primary border-primary/20 bg-primary/5 mb-4 inline-block rounded-full border px-3 py-1 text-xs font-medium">
-            {event.eventType}
+            {getEventTypeLabel(event.eventType, locale)}
           </span>
 
           {/* Title */}
@@ -216,7 +217,7 @@ export function EventDetail({
                           alt={re.title}
                           fill
                           sizes="(min-width: 640px) 33vw, 100vw"
-                          className="object-cover object-top transition-transform duration-500 group-hover:scale-[1.03]"
+                          className={`${re.eventType === "Competition" || re.eventType === "Conference" ? "object-contain" : "object-cover"} object-top transition-transform duration-500 group-hover:scale-[1.03]`}
                         />
                       ) : null}
                     </div>

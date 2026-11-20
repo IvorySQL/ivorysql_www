@@ -446,6 +446,7 @@
     "viewDetails": "查看详情"
   },
   "EventsUI": {
+    "eventStatus": "活动状态",
     "backToEvents": "全部活动",
     "previousEvent": "上一个活动",
     "nextEvent": "下一个活动",
